@@ -1,5 +1,4 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TemplateHaskell            #-}
 
 {-|
@@ -27,10 +26,7 @@ module Sthenauth.Shell.Command
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Control.Lens.TH (makeClassy)
-import Control.Monad.Except (ExceptT, MonadError, runExceptT, mapExceptT)
-import Control.Monad.Reader (ReaderT, MonadReader, runReaderT)
 import qualified Iolaus.Opaleye as DB
-import Control.Monad.IO.Class (MonadIO, liftIO)
 
 --------------------------------------------------------------------------------
 -- Project Imports:

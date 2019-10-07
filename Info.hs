@@ -20,10 +20,8 @@ module Sthenauth.Shell.Info
 
 --------------------------------------------------------------------------------
 -- Library Imports:
-import Control.Lens (view)
 import Data.Aeson.Encode.Pretty (encodePretty)
-import qualified Data.ByteString.Lazy as LBS
-import Control.Monad.IO.Class (liftIO)
+import qualified Data.ByteString.Lazy as LByteString
 
 --------------------------------------------------------------------------------
 -- Project Imports:
@@ -35,4 +33,4 @@ import Sthenauth.Shell.Options (Options)
 run :: Options a -> Command ()
 run _ = do
   cfg <- view config
-  liftIO $ LBS.putStr (encodePretty cfg)
+  liftIO $ LByteString.putStr (encodePretty cfg)

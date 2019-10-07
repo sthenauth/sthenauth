@@ -20,7 +20,6 @@ module Sthenauth.Shell.Boot
 
 --------------------------------------------------------------------------------
 -- Library Imports:
-import Control.Monad.Except (runExceptT)
 import Options.Applicative
 import System.Exit (die)
 

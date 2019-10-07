@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 {-|
@@ -25,9 +24,10 @@ module Sthenauth.Shell.Error
 
 --------------------------------------------------------------------------------
 -- Library Imports:
-import Control.Lens.TH (makeClassyPrisms)
 import Control.Exception (SomeException)
+import Control.Lens.TH (makeClassyPrisms)
 import Iolaus.Opaleye (AsOpaleyeError(_OpaleyeError), OpaleyeError)
+import qualified Text.Show
 
 --------------------------------------------------------------------------------
 -- | Errors that can occur when running a 'Command'.

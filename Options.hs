@@ -22,11 +22,10 @@ module Sthenauth.Shell.Options
 
 --------------------------------------------------------------------------------
 -- Library Imports:
-import Control.Monad (when)
+import qualified Data.List as List
 import Data.Version (showVersion)
 import Options.Applicative
 import System.Environment (getEnvironment)
-import System.Exit (exitSuccess)
 
 --------------------------------------------------------------------------------
 -- Project Imports:
@@ -131,7 +130,7 @@ parser env =
 
     tryEnv :: String -> Parser String
     tryEnv key =
-      case lookup (envPrefix <> key) env of
+      case List.lookup (envPrefix <> key) env of
         Nothing -> empty
         Just v  -> pure v
 

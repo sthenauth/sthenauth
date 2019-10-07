@@ -1,6 +1,3 @@
-{-# LANGUAGE MultiWayIf          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 {-|
 
 Copyright:
@@ -25,16 +22,6 @@ module Sthenauth.Shell.Init
 
 --------------------------------------------------------------------------------
 -- Library Imports:
-import Control.Applicative
-import Control.Lens ((&), (?~))
-import Control.Monad (when, unless)
-import Control.Monad.Error.Lens (throwing)
-import Control.Monad.Except (MonadError)
-import Control.Monad.IO.Class (MonadIO)
-import Data.Maybe (fromMaybe)
-import Data.Text (Text)
-import qualified Data.Text as Text
-import qualified Data.Text.IO as Text
 import qualified Iolaus.Crypto.Key as Key
 import qualified Iolaus.Crypto.Salt as Salt
 import qualified Iolaus.Opaleye as DB
@@ -174,7 +161,7 @@ initDatabase
   -> m (Config, Command ())
 initDatabase opts cfg = do
   let def = databaseConfig cfg
-      conn = maybe (DB.connectionString def) Text.pack $ Options.dbconn opts
+      conn = maybe (DB.connectionString def) toText $ Options.dbconn opts
       cfg' = cfg & database ?~ (def { DB.connectionString = conn })
 
   pure (cfg', go)
@@ -218,5 +205,5 @@ makeFile opts path action = do
     createFile :: m Bool
     createFile = shellIO $ do
       createDirectoryIfMissing True (takeDirectory path)
-      action >>= Text.writeFile path
+      action >>= writeFileText path
       doesFileExist path

@@ -1,5 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-
 {-|
 
 Copyright:
@@ -23,9 +21,6 @@ module Sthenauth.Shell.IO
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Control.Exception.Safe (try)
-import Control.Monad.Error.Lens (throwing)
-import Control.Monad.Except (MonadError)
-import Control.Monad.IO.Class (MonadIO, liftIO)
 
 --------------------------------------------------------------------------------
 -- Project Imports:
