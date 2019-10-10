@@ -34,8 +34,7 @@ import qualified Text.Show
 data ShellError
   = MissingConfig FilePath
   | MissingDefaultConfig FilePath FilePath
-  | MissingSymmetricKey FilePath
-  | MissingSystemSalt FilePath
+  | MissingKeysFile FilePath
   | ShellException SomeException
   | DatabaseError OpaleyeError
 
@@ -62,15 +61,9 @@ instance Show ShellError where
               , src
               ]
 
-    MissingSymmetricKey path ->
-      mconcat [ "missing symmetric encryption key "
+    MissingKeysFile path ->
+      mconcat [ "missing encryption keys file "
               , "and --init not given, expected to find key at: "
-              , path
-              ]
-
-    MissingSystemSalt path ->
-      mconcat [ "missing system salt file for hashing "
-              , "and --init not given, expected to find file at: "
               , path
               ]
 

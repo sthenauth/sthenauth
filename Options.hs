@@ -45,8 +45,7 @@ data Options a = Options
   , config   :: FilePath
   , private  :: FilePath
   , dbconn   :: Maybe String
-  , skeypath :: Maybe FilePath
-  , saltpath :: Maybe FilePath
+  , keyspath :: Maybe FilePath
   , command  :: a
   }
 
@@ -60,8 +59,7 @@ parser env =
           <*> optConfig "CONFIG"
           <*> optPrivate "PRIVATE_DIR"
           <*> ((Just <$> optDbconn "DB") <|> pure Nothing)
-          <*> ((Just <$> optSkeypath "SYMMETRIC_KEY") <|> pure Nothing)
-          <*> ((Just <$> optSaltpath "SALT") <|> pure Nothing)
+          <*> ((Just <$> optKeyspath "KEYS_PATH") <|> pure Nothing)
           <*> parseCommand
 
   where
@@ -111,18 +109,11 @@ parser env =
               , help ("Use STR as the database connection string" <> also key)
               ]
 
-    optSkeypath :: String -> Parser String
-    optSkeypath key = (tryEnv key <|>) $ strOption $
-      mconcat [ long "symmetric-key"
+    optKeyspath :: String -> Parser String
+    optKeyspath key = (tryEnv key <|>) $ strOption $
+      mconcat [ long "keys"
               , metavar "PATH"
-              , help ("Load the symmetric key from PATH" <> also key)
-              ]
-
-    optSaltpath :: String -> Parser String
-    optSaltpath key = (tryEnv key <|>) $ strOption $
-      mconcat [ long "salt"
-              , metavar "PATH"
-              , help ("Load system salt from PATH" <>  also key)
+              , help ("Load the encryption keys from PATH" <> also key)
               ]
 
     envPrefix :: String

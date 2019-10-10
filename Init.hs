@@ -22,21 +22,21 @@ module Sthenauth.Shell.Init
 
 --------------------------------------------------------------------------------
 -- Library Imports:
-import qualified Iolaus.Crypto.Key as Key
-import qualified Iolaus.Crypto.Salt as Salt
+import Iolaus.Crypto (DefaultCipher)
 import qualified Iolaus.Opaleye as DB
 import System.Directory
 import System.FilePath
 
 --------------------------------------------------------------------------------
 -- Project Imports:
-import Sthenauth.Shell.IO (shellIO)
+import Sthenauth.Types.Keys
 import qualified Paths_sthenauth as Sthenauth
-import Sthenauth.Types.Config
-import Sthenauth.Shell.Options (Options)
-import qualified Sthenauth.Shell.Options as Options
 import Sthenauth.Shell.Command
 import Sthenauth.Shell.Error
+import Sthenauth.Shell.IO (shellIO)
+import Sthenauth.Shell.Options (Options)
+import qualified Sthenauth.Shell.Options as Options
+import Sthenauth.Types.Config
 
 --------------------------------------------------------------------------------
 -- | Initialize the application in preparation for running a command.
@@ -58,9 +58,8 @@ runInit
   => Options a
   -> m (Config, Command ())
 runInit opts = do
-  (cfg, cmd) <- initConfig opts         >>=
-                  initSymmetricKey opts >>=
-                  initSystemSalt opts   >>=
+  (cfg, cmd) <- initConfig opts >>=
+                  initKeys opts >>=
                   initDatabase opts
 
   pure (cfg, cmd >> migrateDatabase opts)
@@ -102,8 +101,8 @@ initConfig options = do
       copyFile src dst
 
 --------------------------------------------------------------------------------
--- | Create a new symmetric key if one doesn't already exist.
-initSymmetricKey
+-- | Create a new keys file if one doesn't already exist.
+initKeys
   :: forall e m a.
   ( MonadIO m
   , MonadError e m
@@ -112,38 +111,25 @@ initSymmetricKey
   => Options a
   -> Config
   -> m Config
-initSymmetricKey options cfg = do
-  let src  = Options.skeypath options <|> _symmetricKeyPath cfg
-      def  = Options.private options </> "skey.txt"
+initKeys options cfg = do
+  let src  = Options.keyspath options <|> cfg ^. keysPath
+      def  = Options.private options </> "keys.json"
       path = fromMaybe def src
 
-  exists <- makeFile options path (Key.encode <$> Key.generate)
+  exists <- shellIO (doesFileExist path)
 
-  if exists
-    then pure (cfg & symmetricKeyPath ?~ path)
-    else throwing _MissingSymmetricKey path
+  if | exists -> done path
+     | Options.init options -> go path >> done path
+     | otherwise -> throwing _MissingKeysFile path
 
---------------------------------------------------------------------------------
--- | Create a new system salt file if one doesn't already exist.
-initSystemSalt
-  :: forall e m a.
-  ( MonadIO m
-  , MonadError e m
-  , AsShellError e
-  )
-  => Options a
-  -> Config
-  -> m Config
-initSystemSalt opts cfg = do
-  let src  = Options.saltpath opts <|> _systemSaltPath cfg
-      def  = Options.private opts </> "salt.txt"
-      path = fromMaybe def src
+  where
+    go :: FilePath -> m ()
+    go file =
+      shellIO (generateKeys :: IO (Keys DefaultCipher)) >>=
+        saveKeysFile file
 
-  exists <- makeFile opts path (Salt.encode <$> Salt.generate)
-
-  if exists
-    then pure (cfg & systemSaltPath ?~ path)
-    else throwing _MissingSystemSalt path
+    done :: FilePath -> m Config
+    done path = pure (cfg & keysPath ?~ path)
 
 --------------------------------------------------------------------------------
 -- | Initialize the database.
@@ -181,29 +167,3 @@ migrateDatabase
 migrateDatabase opts = when (Options.migrate opts) $ do
   schemaDir <- (</> "schema") <$> shellIO Sthenauth.getDataDir
   DB.migrate schemaDir True
-
---------------------------------------------------------------------------------
--- | Create a file if it doesn't exist and we're in @init@ mode.
-makeFile
-  :: forall e m a.
-  ( MonadIO m
-  , MonadError e m
-  , AsShellError e
-  )
-  => Options a
-  -> FilePath   -- ^ The file to create if it's missing.
-  -> IO Text    -- ^ Action to produce the file's content.
-  -> m Bool     -- ^ True if the file exists or was created.
-makeFile opts path action = do
-  exists <- shellIO (doesFileExist path)
-
-  if | exists -> pure True
-     | Options.init opts -> createFile
-     | otherwise -> pure False
-
-  where
-    createFile :: m Bool
-    createFile = shellIO $ do
-      createDirectoryIfMissing True (takeDirectory path)
-      action >>= writeFileText path
-      doesFileExist path
