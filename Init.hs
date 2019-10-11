@@ -26,6 +26,7 @@ import Iolaus.Crypto (DefaultCipher)
 import qualified Iolaus.Opaleye as DB
 import System.Directory
 import System.FilePath
+import System.PosixCompat.Files (setFileMode)
 
 --------------------------------------------------------------------------------
 -- Project Imports:
@@ -99,6 +100,7 @@ initConfig options = do
     copyConfig src dst = shellIO $ do
       createDirectoryIfMissing True (takeDirectory dst)
       copyFile src dst
+      setFileMode dst 0o600 -- copyFile doesn't respect umask
 
 --------------------------------------------------------------------------------
 -- | Create a new keys file if one doesn't already exist.

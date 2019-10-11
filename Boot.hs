@@ -22,6 +22,7 @@ module Sthenauth.Shell.Boot
 -- Library Imports:
 import Options.Applicative
 import System.Exit (die)
+import System.PosixCompat.Files (setFileCreationMask)
 
 --------------------------------------------------------------------------------
 -- Project Imports:
@@ -52,6 +53,10 @@ instance IsCommand Commands where
 -- | Main entry point.
 run :: IO ()
 run = do
+  -- General process settings:
+  void (setFileCreationMask 0o077)
+
+  -- Option parsing and processing:
   options <- parse :: IO (Options Commands)
   (cfg, cmd) <- runExceptT (runInit options) >>= checkOrDie
 
