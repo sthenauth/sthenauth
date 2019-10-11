@@ -29,7 +29,6 @@ import System.FilePath
 
 --------------------------------------------------------------------------------
 -- Project Imports:
-import Sthenauth.Types.Keys
 import qualified Paths_sthenauth as Sthenauth
 import Sthenauth.Shell.Command
 import Sthenauth.Shell.Error
@@ -37,6 +36,7 @@ import Sthenauth.Shell.IO (shellIO)
 import Sthenauth.Shell.Options (Options)
 import qualified Sthenauth.Shell.Options as Options
 import Sthenauth.Types.Config
+import Sthenauth.Types.Secrets
 
 --------------------------------------------------------------------------------
 -- | Initialize the application in preparation for running a command.
@@ -59,7 +59,7 @@ runInit
   -> m (Config, Command ())
 runInit opts = do
   (cfg, cmd) <- initConfig opts >>=
-                  initKeys opts >>=
+                  initSecrets opts >>=
                   initDatabase opts
 
   pure (cfg, cmd >> migrateDatabase opts)
@@ -102,7 +102,7 @@ initConfig options = do
 
 --------------------------------------------------------------------------------
 -- | Create a new keys file if one doesn't already exist.
-initKeys
+initSecrets
   :: forall e m a.
   ( MonadIO m
   , MonadError e m
@@ -111,25 +111,25 @@ initKeys
   => Options a
   -> Config
   -> m Config
-initKeys options cfg = do
-  let src  = Options.keyspath options <|> cfg ^. keysPath
-      def  = Options.private options </> "keys.json"
+initSecrets options cfg = do
+  let src  = Options.secrets options <|> cfg ^. secretsPath
+      def  = Options.private options </> "secrets.json"
       path = fromMaybe def src
 
   exists <- shellIO (doesFileExist path)
 
   if | exists -> done path
      | Options.init options -> go path >> done path
-     | otherwise -> throwing _MissingKeysFile path
+     | otherwise -> throwing _MissingSecretsFile path
 
   where
     go :: FilePath -> m ()
     go file =
-      shellIO (generateKeys :: IO (Keys DefaultCipher)) >>=
-        saveKeysFile file
+      shellIO (generateSecrets :: IO (Secrets DefaultCipher)) >>=
+        saveSecretsFile file
 
     done :: FilePath -> m Config
-    done path = pure (cfg & keysPath ?~ path)
+    done path = pure (cfg & secretsPath ?~ path)
 
 --------------------------------------------------------------------------------
 -- | Initialize the database.

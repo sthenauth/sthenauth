@@ -34,7 +34,7 @@ import qualified Text.Show
 data ShellError
   = MissingConfig FilePath
   | MissingDefaultConfig FilePath FilePath
-  | MissingKeysFile FilePath
+  | MissingSecretsFile FilePath
   | ShellException SomeException
   | DatabaseError OpaleyeError
 
@@ -61,8 +61,8 @@ instance Show ShellError where
               , src
               ]
 
-    MissingKeysFile path ->
-      mconcat [ "missing encryption keys file "
+    MissingSecretsFile path ->
+      mconcat [ "missing encryption keys (secrets) file "
               , "and --init not given, expected to find key at: "
               , path
               ]

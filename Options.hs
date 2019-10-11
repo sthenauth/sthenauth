@@ -45,7 +45,7 @@ data Options a = Options
   , config   :: FilePath
   , private  :: FilePath
   , dbconn   :: Maybe String
-  , keyspath :: Maybe FilePath
+  , secrets  :: Maybe FilePath
   , command  :: a
   }
 
@@ -59,7 +59,7 @@ parser env =
           <*> optConfig "CONFIG"
           <*> optPrivate "PRIVATE_DIR"
           <*> ((Just <$> optDbconn "DB") <|> pure Nothing)
-          <*> ((Just <$> optKeyspath "KEYS_PATH") <|> pure Nothing)
+          <*> ((Just <$> optSecrets "SECRETS_PATH") <|> pure Nothing)
           <*> parseCommand
 
   where
@@ -109,9 +109,9 @@ parser env =
               , help ("Use STR as the database connection string" <> also key)
               ]
 
-    optKeyspath :: String -> Parser String
-    optKeyspath key = (tryEnv key <|>) $ strOption $
-      mconcat [ long "keys"
+    optSecrets :: String -> Parser String
+    optSecrets key = (tryEnv key <|>) $ strOption $
+      mconcat [ long "secrets"
               , metavar "PATH"
               , help ("Load the encryption keys from PATH" <> also key)
               ]
