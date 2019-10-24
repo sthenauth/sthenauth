@@ -27,7 +27,7 @@ module Sthenauth.Core.AuthN
 import Control.Arrow (returnA)
 import Iolaus.Crypto (MonadCrypto)
 import qualified Iolaus.Crypto as Crypto
-import Iolaus.Opaleye
+import Iolaus.Database
 import Opaleye ((.==))
 import qualified Opaleye as O
 
@@ -45,7 +45,7 @@ import Sthenauth.Types.Username
 --------------------------------------------------------------------------------
 -- FIXME: use selectFold or maybe just select the ID column.
 doesAccountExist
-  :: ( MonadOpaleye m
+  :: ( MonadDB m
      , MonadCrypto m
      , MonadReader r m
      , HasSecrets r c

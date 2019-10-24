@@ -22,7 +22,7 @@ module Sthenauth.Core.Admin
 -- Library Imports:
 import Data.Time.Clock (addUTCTime)
 import Iolaus.Crypto (encrypt)
-import Iolaus.Opaleye
+import Iolaus.Database
 import Iolaus.Validation (runValidationEither)
 import Opaleye (Insert(..), rReturning, rCount)
 import Opaleye.ToFields (toFields)
@@ -41,7 +41,7 @@ import Sthenauth.Types.Secrets
 --------------------------------------------------------------------------------
 -- | Try to insert a new site into the database.
 insertSite
-  :: (MonadOpaleye m)
+  :: (MonadDB m)
   => Site Write
   -> (SiteId -> SiteKey.Key Write)
   -> m (Maybe SiteId)
@@ -57,7 +57,7 @@ insertSite site keyf = transaction $ do
 --------------------------------------------------------------------------------
 createSite
   :: ( MonadCrypto m
-     , MonadOpaleye m
+     , MonadDB m
      , MonadRandom m
      , MonadError e m
      , MonadReader r m
