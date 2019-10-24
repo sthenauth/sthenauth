@@ -30,7 +30,7 @@ import Sthenauth.Shell.Options (Options)
 
 --------------------------------------------------------------------------------
 -- | Simple command that dumps the current configuration.
-run :: Options a -> Command ()
+run :: Options a -> Command c ()
 run _ = do
   cfg <- view config
   liftIO $ LByteString.putStr (encodePretty cfg)

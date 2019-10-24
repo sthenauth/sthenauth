@@ -22,6 +22,7 @@ module Sthenauth.Shell.Init
 
 --------------------------------------------------------------------------------
 -- Library Imports:
+import Data.Time.Clock (getCurrentTime)
 import Iolaus.Crypto (DefaultCipher)
 import qualified Iolaus.Database as DB
 import System.Directory
@@ -36,7 +37,10 @@ import Sthenauth.Shell.Error
 import Sthenauth.Shell.IO (shellIO)
 import Sthenauth.Shell.Options (Options)
 import qualified Sthenauth.Shell.Options as Options
+import Sthenauth.Tables.Site as Site
 import Sthenauth.Types.Config
+import Sthenauth.Types.Policy
+import qualified Sthenauth.Core.Admin as Admin
 import Sthenauth.Types.Secrets
 
 --------------------------------------------------------------------------------
@@ -51,13 +55,13 @@ import Sthenauth.Types.Secrets
 --      given 'Options' allow doing so.
 --
 runInit
-  :: forall e m a.
-  ( MonadIO m
-  , MonadError e m
-  , AsShellError e
-  )
+  :: ( MonadIO m
+     , MonadError e m
+     , AsShellError e
+     , BlockCipher c
+     )
   => Options a
-  -> m (Config, Command ())
+  -> m (Config, Command c ())
 runInit opts = do
   (cfg, cmd) <- initConfig opts >>=
                   initSecrets opts >>=
@@ -143,10 +147,10 @@ initSecrets options cfg = do
 -- Returns the updated 'Config' and a 'Command' that can be used to
 -- initialize the database.
 initDatabase
-  :: (Monad m)
+  :: forall m c a. (Monad m, BlockCipher c)
   => Options a
   -> Config
-  -> m (Config, Command ())
+  -> m (Config, Command c ())
 initDatabase opts cfg = do
   let def = databaseConfig cfg
       conn = maybe (DB.connectionString def) toText $ Options.dbconn opts
@@ -155,17 +159,35 @@ initDatabase opts cfg = do
   pure (cfg', go)
 
   where
-    go :: Command ()
+    go :: Command c ()
     go = when (Options.init opts) $ do
       schemaDir <- (</> "schema") <$> shellIO Sthenauth.getDataDir
       exists <- DB.initialized
       unless exists (DB.migrate schemaDir True)
+      siteQuery
+
+    siteQuery :: Command c ()
+    siteQuery = do
+      time <- shellIO getCurrentTime
+      sec  <- view secrets
+
+      let site = Site { pk = mempty
+                      , created_at = mempty
+                      , updated_at = mempty
+                      , is_default = Just True
+                      , after_login_url = Nothing
+                      , fqdn = "localhost"
+                      , policy = defaultPolicy
+                      }
+      whenNothingM_ Site.selectDefaultSite
+        (void $ Admin.createSite time sec site)
+
 
 --------------------------------------------------------------------------------
 -- | Return a 'Command' that can be used to migrate the database.
 migrateDatabase
   :: Options a
-  -> Command ()
+  -> Command c ()
 migrateDatabase opts = when (Options.migrate opts) $ do
   schemaDir <- (</> "schema") <$> shellIO Sthenauth.getDataDir
   DB.migrate schemaDir True

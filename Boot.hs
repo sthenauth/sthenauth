@@ -32,7 +32,8 @@ import qualified Sthenauth.Shell.Info as Info
 import Sthenauth.Shell.Init
 import Sthenauth.Shell.Options (Options, IsCommand(..), parse)
 import qualified Sthenauth.Shell.Options as Options
-import Sthenauth.Types.Config (Config)
+import Sthenauth.Types.Config
+import Sthenauth.Types.Secrets
 
 --------------------------------------------------------------------------------
 -- | The various commands that can be executed.
@@ -50,6 +51,9 @@ instance IsCommand Commands where
       cmd name desc p = command name (info p (progDesc desc))
 
 --------------------------------------------------------------------------------
+type Boot c = ExceptT ShellError IO (Config, Command c (), Secrets c)
+
+--------------------------------------------------------------------------------
 -- | Main entry point.
 run :: IO ()
 run = do
@@ -58,15 +62,22 @@ run = do
 
   -- Option parsing and processing:
   options <- parse :: IO (Options Commands)
-  (cfg, cmd) <- runExceptT (runInit options) >>= checkOrDie
 
-  case Options.command options of
-    InfoCommand -> runCommandIO cfg (cmd >> Info.run options)
+  -- FIXME: We need a way to make the block cipher selectable at run time.
+  (cfg, initcmd, sec) <- runExceptT (boot options :: Boot DefaultCipher) >>= checkOrDie
+
+  let cmd = case Options.command options of
+             InfoCommand -> Info.run options
+
+  runCommand cfg sec (initcmd >> cmd) >>= checkOrDie
 
   where
     checkOrDie :: Either ShellError a -> IO a
     checkOrDie (Right a) = pure a
     checkOrDie (Left e)  = die (show e)
 
-    runCommandIO :: Config -> Command a -> IO a
-    runCommandIO cfg cmd = runCommand cfg cmd >>= checkOrDie
+    boot :: (BlockCipher c) => Options Commands -> Boot c
+    boot options = do
+      (cfg, cmd) <- runInit options
+      sec <- loadSecretsFile $ fromMaybe "/dev/null" (cfg ^. secretsPath)
+      return (cfg, cmd, sec)

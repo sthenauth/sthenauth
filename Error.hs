@@ -26,8 +26,10 @@ module Sthenauth.Shell.Error
 -- Library Imports:
 import Control.Exception (SomeException)
 import Control.Lens.TH (makeClassyPrisms)
-import Iolaus.Database (AsDBError(_DBError), DBError)
+import Iolaus.Database (AsDBError(_DBError))
+import qualified Iolaus.Crypto.Error as Crypto
 import qualified Text.Show
+import Sthenauth.Types.Error (Error, AsError(..), AsUserError(_UserError))
 
 --------------------------------------------------------------------------------
 -- | Errors that can occur when running a 'Command'.
@@ -36,13 +38,22 @@ data ShellError
   | MissingDefaultConfig FilePath FilePath
   | MissingSecretsFile FilePath
   | ShellException SomeException
-  | DatabaseError DBError
+  | SystemError Error
 
 makeClassyPrisms ''ShellError
 
 --------------------------------------------------------------------------------
+instance AsError ShellError where
+  _Error = _SystemError
+
+instance AsUserError ShellError where
+  _UserError = _SystemError . _ApplicationUserError
+
 instance AsDBError ShellError where
-  _DBError = _DatabaseError
+  _DBError = _SystemError ._DatabaseError
+
+instance Crypto.AsCryptoError ShellError where
+  _CryptoError = _SystemError . _CryptoError
 
 --------------------------------------------------------------------------------
 instance Show ShellError where
@@ -72,7 +83,7 @@ instance Show ShellError where
               , show e
               ]
 
-    DatabaseError e ->
-      mconcat [ "a fatal database error occurred: "
+    SystemError e ->
+      mconcat [ "a system-level error occurred: "
               , show e
               ]
