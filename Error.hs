@@ -26,7 +26,7 @@ module Sthenauth.Shell.Error
 -- Library Imports:
 import Control.Exception (SomeException)
 import Control.Lens.TH (makeClassyPrisms)
-import Iolaus.Opaleye (AsOpaleyeError(_OpaleyeError), OpaleyeError)
+import Iolaus.Database (AsDBError(_DBError), DBError)
 import qualified Text.Show
 
 --------------------------------------------------------------------------------
@@ -36,13 +36,13 @@ data ShellError
   | MissingDefaultConfig FilePath FilePath
   | MissingSecretsFile FilePath
   | ShellException SomeException
-  | DatabaseError OpaleyeError
+  | DatabaseError DBError
 
 makeClassyPrisms ''ShellError
 
 --------------------------------------------------------------------------------
-instance AsOpaleyeError ShellError where
-  _OpaleyeError = _DatabaseError
+instance AsDBError ShellError where
+  _DBError = _DatabaseError
 
 --------------------------------------------------------------------------------
 instance Show ShellError where

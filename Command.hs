@@ -26,7 +26,7 @@ module Sthenauth.Shell.Command
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Control.Lens.TH (makeClassy)
-import qualified Iolaus.Opaleye as DB
+import qualified Iolaus.Database as DB
 
 --------------------------------------------------------------------------------
 -- Project Imports:
@@ -37,12 +37,12 @@ import Sthenauth.Types.Config (Config, databaseConfig)
 -- | Run-time environment.
 data Env = Env
   { _config    :: Config
-  , _db        :: DB.Opaleye    -- ^ The Opaleye run time.
+  , _db        :: DB.Database -- ^ The Opaleye run time.
 --  , _crypto    :: Crypto.Crypto -- ^ Crypto environment.
   }
 
 makeClassy ''Env
-instance DB.HasOpaleye Env where opaleye = db
+instance DB.HasDatabase Env where database = db
 -- instance Crypto.HasCrypto Env where crypto = crypto
 
 --------------------------------------------------------------------------------
@@ -55,8 +55,8 @@ newtype Command a = Command
            , MonadReader Env
            )
 
-instance DB.MonadOpaleye Command where
-  liftQuery = DB.runOpaleye
+instance DB.MonadDB Command where
+  liftQuery = DB.liftQueryIO
 
 --------------------------------------------------------------------------------
 -- | Execute a 'Command'.
@@ -70,5 +70,5 @@ runCommand cfg cmd =
     mkEnv :: Config -> ExceptT ShellError IO Env
     mkEnv c =
       Env <$> pure cfg
-          <*> DB.initOpaleye (databaseConfig c) Nothing
+          <*> DB.initDatabase (databaseConfig c) Nothing
           -- <*> Crypto.initCrypto _crypto

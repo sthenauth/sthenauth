@@ -23,7 +23,7 @@ module Sthenauth.Shell.Init
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Iolaus.Crypto (DefaultCipher)
-import qualified Iolaus.Opaleye as DB
+import qualified Iolaus.Database as DB
 import System.Directory
 import System.FilePath
 import System.PosixCompat.Files (setFileMode)
