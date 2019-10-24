@@ -35,7 +35,6 @@ import Sthenauth.Tables.Util
 import Sthenauth.Types.Error
 import Sthenauth.Types.JWK
 import Sthenauth.Types.Policy
-import Sthenauth.Types.Remote
 import Sthenauth.Types.Secrets
 
 --------------------------------------------------------------------------------
@@ -60,23 +59,21 @@ createSite
      , MonadDB m
      , MonadRandom m
      , MonadError e m
-     , MonadReader r m
      , AsError e
      , AsUserError e
-     , HasSecrets r c
-     , HasRemote r
      , BlockCipher c
      )
-   => Site UI
+   => UTCTime
+   -> Secrets c
+   -> Site UI
    -> m SiteId
-createSite s = do
+createSite time sec s = do
   site <- runValidationEither checkSite s >>=
             either (throwing _ValidationError) pure
 
-  rtime <- request_time <$> view remote
   let expireIn = nominalSeconds (jwkExpiresIn defaultPolicy)
+      cryptoKey = sec ^. symmetricKey
 
-  cryptoKey <- view (secrets.symmetricKey)
   (jwk, keyid) <- newJWK
   ejwk <- encrypt cryptoKey jwk
 
@@ -88,7 +85,7 @@ createSite s = do
         , kid = toFields keyid
         , key_use = toFields Sig
         , key_data = toFields ejwk
-        , expires_at = toFields (addUTCTime expireIn rtime)
+        , expires_at = toFields (addUTCTime expireIn time)
         }
 
   insertSite site key >>=
