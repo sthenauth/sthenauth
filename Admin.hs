@@ -42,9 +42,11 @@ import Sthenauth.Types.Secrets
 insertSite
   :: (MonadDB m)
   => Site Write
+  -> Bool -- ^ Is the new site the default site?
   -> (SiteId -> SiteKey.Key Write)
   -> m (Maybe SiteId)
-insertSite site keyf = transaction $ do
+insertSite site def keyf = transaction $ do
+    when def Site.resetDefaultSite
     sid <- listToMaybe <$> insert inS
     mapM_ (insert . inK) sid
     pure sid
@@ -88,5 +90,5 @@ createSite time sec s = do
         , expires_at = toFields (addUTCTime expireIn time)
         }
 
-  insertSite site key >>=
+  insertSite site (fromMaybe False $ is_default s) key >>=
     maybe (throwing _RuntimeError "failed to insert new site") pure
