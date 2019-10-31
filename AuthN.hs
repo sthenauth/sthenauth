@@ -48,7 +48,7 @@ doesAccountExist
   :: ( MonadDB m
      , MonadCrypto m
      , MonadReader r m
-     , HasSecrets r c
+     , HasSecrets r
      )
   => Login
   -> m Bool
@@ -63,7 +63,7 @@ doesAccountExist login = do
 accountByLogin
   :: ( MonadCrypto m
      , MonadReader r m
-     , HasSecrets r c
+     , HasSecrets r
      )
   => Login
   -> m (O.Query (Account View))

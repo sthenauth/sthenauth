@@ -14,27 +14,34 @@ Copyright:
 License: Apache-2.0
 
 -}
+{-# LANGUAGE Arrows #-}
+
 module Sthenauth.Core.Admin
   ( createSite
+  , siteFromRemote
   ) where
 
 --------------------------------------------------------------------------------
 -- Library Imports:
+import Control.Arrow (returnA)
 import Data.Time.Clock (addUTCTime)
 import Iolaus.Crypto (encrypt)
 import Iolaus.Database
 import Iolaus.Validation (runValidationEither)
-import Opaleye (Insert(..), rReturning, rCount)
+import Opaleye (Insert(..), rReturning, rCount, (.==), (.||))
+import qualified Opaleye as O
 import Opaleye.ToFields (toFields)
 
 --------------------------------------------------------------------------------
 -- Project Imports:
 import Sthenauth.Tables.Site as Site
 import Sthenauth.Tables.Site.Key as SiteKey
+import Sthenauth.Tables.Site.Alias as SiteAlias
 import Sthenauth.Tables.Util
 import Sthenauth.Types.Error
 import Sthenauth.Types.JWK
 import Sthenauth.Types.Policy
+import Sthenauth.Types.Remote
 import Sthenauth.Types.Secrets
 
 --------------------------------------------------------------------------------
@@ -56,6 +63,7 @@ insertSite site def keyf = transaction $ do
     inK sid = Insert SiteKey.keys [keyf sid] rCount Nothing
 
 --------------------------------------------------------------------------------
+-- | Validate a new site, then insert it into the database.
 createSite
   :: ( MonadCrypto m
      , MonadDB m
@@ -63,10 +71,9 @@ createSite
      , MonadError e m
      , AsError e
      , AsUserError e
-     , BlockCipher c
      )
    => UTCTime
-   -> Secrets c
+   -> Secrets
    -> Site UI
    -> m SiteId
 createSite time sec s = do
@@ -76,7 +83,7 @@ createSite time sec s = do
   let expireIn = nominalSeconds (jwkExpiresIn defaultPolicy)
       cryptoKey = sec ^. symmetricKey
 
-  (jwk, keyid) <- newJWK
+  (jwk, keyid) <- newJWK Sig
   ejwk <- encrypt cryptoKey jwk
 
   let key sid = SiteKey.Key
@@ -92,3 +99,45 @@ createSite time sec s = do
 
   insertSite site (fromMaybe False $ is_default s) key >>=
     maybe (throwing _RuntimeError "failed to insert new site") pure
+
+--------------------------------------------------------------------------------
+-- | Locate the active site.
+siteFromRemote
+  :: ( MonadDB m
+     )
+  => Remote
+  -> m (Maybe (Site Id))
+siteFromRemote Remote{request_fqdn} =
+  listToMaybe <$> liftQuery
+    (select $ O.orderBy (O.asc is_default) $ O.limit 1 query)
+
+  where
+    -- Select sites where...
+    query :: O.Select (Site View)
+    query = proc () -> do
+      t1 <- O.selectTable sites -< ()
+      (_, domain) <- aliasJoin -< t1
+
+          -- 1. Request domain matches the site's FQDN.
+      let siteMatch = Site.fqdn t1 `lowerEq` request_fqdn
+
+          -- 2. Request domain matches a site alias' FQDN.
+          aliasMatch = O.matchNullable (O.sqlBool False)
+                       (`lowerEq` request_fqdn) domain
+
+          -- 3. The site is marked as the default site.
+          defaultMatch = Site.is_default t1
+
+      O.restrict -< (siteMatch .|| aliasMatch .|| defaultMatch)
+      returnA -< t1
+
+    -- Join the site and site_aliases tables.
+    aliasJoin :: O.SelectArr (Site View) (O.FieldNullable SqlUuid, O.FieldNullable SqlText)
+    aliasJoin = proc t1 -> O.leftJoinA aliasSelect -<
+      (\(uuid, _) -> uuid .== Site.pk t1)
+
+    -- A subset of the site_aliases table.
+    aliasSelect :: O.Select (O.Column SqlUuid, O.Column SqlText)
+    aliasSelect = proc () -> do
+      t <- O.selectTable SiteAlias.aliases -< ()
+      returnA -< (SiteAlias.site_id t, SiteAlias.fqdn t)
