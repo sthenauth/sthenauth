@@ -23,7 +23,6 @@ module Sthenauth.Shell.Init
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Data.Time.Clock (getCurrentTime)
-import Iolaus.Crypto (DefaultCipher)
 import qualified Iolaus.Database as DB
 import System.Directory
 import System.FilePath
@@ -58,10 +57,9 @@ runInit
   :: ( MonadIO m
      , MonadError e m
      , AsShellError e
-     , BlockCipher c
      )
   => Options a
-  -> m (Config, Command c ())
+  -> m (Config, Command ())
 runInit opts = do
   (cfg, cmd) <- initConfig opts >>=
                   initSecrets opts >>=
@@ -130,9 +128,7 @@ initSecrets options cfg = do
 
   where
     go :: FilePath -> m ()
-    go file =
-      shellIO (generateSecrets :: IO (Secrets DefaultCipher)) >>=
-        saveSecretsFile file
+    go file = shellIO generateSecrets >>= saveSecretsFile file
 
     done :: FilePath -> m Config
     done path = pure (cfg & secretsPath ?~ path)
@@ -147,10 +143,10 @@ initSecrets options cfg = do
 -- Returns the updated 'Config' and a 'Command' that can be used to
 -- initialize the database.
 initDatabase
-  :: forall m c a. (Monad m, BlockCipher c)
+  :: forall m a. (Monad m)
   => Options a
   -> Config
-  -> m (Config, Command c ())
+  -> m (Config, Command ())
 initDatabase opts cfg = do
   let def = databaseConfig cfg
       conn = maybe (DB.connectionString def) toText $ Options.dbconn opts
@@ -159,14 +155,14 @@ initDatabase opts cfg = do
   pure (cfg', go)
 
   where
-    go :: Command c ()
+    go :: Command ()
     go = when (Options.init opts) $ do
       schemaDir <- (</> "schema") <$> shellIO Sthenauth.getDataDir
       exists <- DB.initialized
       unless exists (DB.migrate schemaDir True)
       siteQuery
 
-    siteQuery :: Command c ()
+    siteQuery :: Command ()
     siteQuery = do
       time <- shellIO getCurrentTime
       sec  <- view secrets
@@ -187,7 +183,7 @@ initDatabase opts cfg = do
 -- | Return a 'Command' that can be used to migrate the database.
 migrateDatabase
   :: Options a
-  -> Command c ()
+  -> Command ()
 migrateDatabase opts = when (Options.migrate opts) $ do
   schemaDir <- (</> "schema") <$> shellIO Sthenauth.getDataDir
   DB.migrate schemaDir True

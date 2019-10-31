@@ -29,6 +29,7 @@ import System.PosixCompat.Files (setFileCreationMask)
 import Sthenauth.Shell.Command (Command, runCommand)
 import Sthenauth.Shell.Error
 import qualified Sthenauth.Shell.Info as Info
+import qualified Sthenauth.Shell.Server as Server
 import Sthenauth.Shell.Init
 import Sthenauth.Shell.Options (Options, IsCommand(..), parse)
 import qualified Sthenauth.Shell.Options as Options
@@ -39,19 +40,21 @@ import Sthenauth.Types.Secrets
 -- | The various commands that can be executed.
 data Commands
   = InfoCommand
+  | ServerCommand
 
 --------------------------------------------------------------------------------
 -- Command line parser for each command.
 instance IsCommand Commands where
   parseCommand = hsubparser $
     mconcat [ cmd "info" "Display evaluated config" (pure InfoCommand)
+            , cmd "server" "Start the HTTP server" (pure ServerCommand)
             ]
     where
       cmd :: String -> String -> Parser a -> Mod CommandFields a
       cmd name desc p = command name (info p (progDesc desc))
 
 --------------------------------------------------------------------------------
-type Boot c = ExceptT ShellError IO (Config, Command c (), Secrets c)
+type Boot = ExceptT ShellError IO (Config, Command (), Secrets)
 
 --------------------------------------------------------------------------------
 -- | Main entry point.
@@ -64,10 +67,11 @@ run = do
   options <- parse :: IO (Options Commands)
 
   -- FIXME: We need a way to make the block cipher selectable at run time.
-  (cfg, initcmd, sec) <- runExceptT (boot options :: Boot DefaultCipher) >>= checkOrDie
+  (cfg, initcmd, sec) <- runExceptT (boot options) >>= checkOrDie
 
   let cmd = case Options.command options of
              InfoCommand -> Info.run options
+             ServerCommand -> Server.run options
 
   runCommand cfg sec (initcmd >> cmd) >>= checkOrDie
 
@@ -76,7 +80,7 @@ run = do
     checkOrDie (Right a) = pure a
     checkOrDie (Left e)  = die (show e)
 
-    boot :: (BlockCipher c) => Options Commands -> Boot c
+    boot :: Options Commands -> Boot
     boot options = do
       (cfg, cmd) <- runInit options
       sec <- loadSecretsFile $ fromMaybe "/dev/null" (cfg ^. secretsPath)

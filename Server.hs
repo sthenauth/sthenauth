@@ -14,23 +14,21 @@ Copyright:
 License: Apache-2.0
 
 -}
-module Sthenauth.Shell.Info
+module Sthenauth.Shell.Server
   ( run
   ) where
 
 --------------------------------------------------------------------------------
 -- Library Imports:
-import Data.Aeson.Encode.Pretty (encodePretty)
-import qualified Data.ByteString.Lazy as LByteString
 
 --------------------------------------------------------------------------------
 -- Project Imports:
+import qualified Sthenauth.API.Server as API
 import Sthenauth.Shell.Command
+import Sthenauth.Shell.IO
 import Sthenauth.Shell.Options (Options)
 
 --------------------------------------------------------------------------------
 -- | Simple command that dumps the current configuration.
 run :: Options a -> Command ()
-run _ = do
-  cfg <- view config
-  liftIO $ LByteString.putStr (encodePretty cfg)
+run _ = ask >>= shellIO . API.run

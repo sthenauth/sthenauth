@@ -21,6 +21,8 @@ License: Apache-2.0
 -}
 module Sthenauth.Shell.Command
   ( Command
+  , Env
+  , HasEnv(..)
   , runCommand
   , config
   ) where
@@ -28,8 +30,9 @@ module Sthenauth.Shell.Command
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Control.Lens.TH (makeClassy)
-import qualified Iolaus.Database as DB
 import qualified Iolaus.Crypto as Crypto
+import qualified Iolaus.Database as DB
+import qualified Text.Password.Strength.Config as Zxcvbn
 
 --------------------------------------------------------------------------------
 -- Project Imports:
@@ -39,37 +42,38 @@ import Sthenauth.Types.Secrets
 
 --------------------------------------------------------------------------------
 -- | Run-time environment.
-data Env c = Env
+data Env = Env
   { _env_config  :: Config
+  , _env_zxcvbn  :: Zxcvbn.Config
   , _env_db      :: DB.Database -- ^ The Opaleye run time.
   , _env_crypto  :: Crypto.Crypto -- ^ Crypto environment.
-  , _env_secrets :: Secrets c
+  , _env_secrets :: Secrets
   }
 
 makeClassy ''Env
 
-instance DB.HasDatabase (Env c) where database = env_db
-instance Crypto.HasCrypto (Env c) where crypto = env_crypto
-instance HasSecrets (Env c) c where secrets = env_secrets
-instance HasConfig (Env c) where config = env_config
+instance DB.HasDatabase Env where database = env_db
+instance Crypto.HasCrypto Env where crypto = env_crypto
+instance HasSecrets Env where secrets = env_secrets
+instance HasConfig Env where config = env_config
 
 --------------------------------------------------------------------------------
 -- | A type encapsulating Sthenauth shell commands.
-newtype Command c a = Command
-  { unC :: ExceptT ShellError (ReaderT (Env c) IO) a}
+newtype Command a = Command
+  { unC :: ExceptT ShellError (ReaderT Env IO) a}
   deriving ( Functor, Applicative, Monad
            , MonadIO
            , MonadError ShellError
-           , MonadReader (Env c)
+           , MonadReader Env
            )
 
-instance DB.MonadDB (Command c) where
+instance DB.MonadDB Command where
   liftQuery = DB.liftQueryIO
 
-instance Crypto.MonadCrypto (Command c) where
+instance Crypto.MonadCrypto Command where
   liftCrypto = Crypto.runCrypto
 
-instance MonadRandom (Command c) where
+instance MonadRandom Command where
   getRandomBytes = liftIO . getRandomBytes
 
 --------------------------------------------------------------------------------
@@ -77,8 +81,8 @@ instance MonadRandom (Command c) where
 runCommand
   :: (MonadIO m)
   => Config
-  -> Secrets c
-  -> Command c a
+  -> Secrets
+  -> Command a
   -> m (Either ShellError a)
 runCommand cfg sec cmd =
   liftIO $ runExceptT $ do
@@ -86,9 +90,10 @@ runCommand cfg sec cmd =
     mapExceptT (`runReaderT` e) (unC cmd)
 
   where
-    mkEnv :: Config -> Secrets c -> ExceptT ShellError IO (Env c)
+    mkEnv :: Config -> Secrets -> ExceptT ShellError IO Env
     mkEnv c s =
       Env <$> pure cfg
+          <*> pure (zxcvbnConfig cfg)
           <*> DB.initDatabase (databaseConfig c) Nothing
           <*> Crypto.initCrypto
           <*> pure s
