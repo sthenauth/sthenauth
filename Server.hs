@@ -68,6 +68,7 @@ server env rkey path vault =
   where
     serveDir :: FilePath -> ServerT Raw m0
     serveDir = serveDirectoryFileServer
+    -- FIXME: Must redirect /auth to /auth/ or <script src=""> won't work!
 
 --------------------------------------------------------------------------------
 -- | Run the actual web server.
