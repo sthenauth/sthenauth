@@ -17,7 +17,9 @@ License: Apache-2.0
 
 -}
 module Sthenauth.Core.AuthN
-  ( doesAccountExist
+  ( asStrongPassword
+  , hashAsPassword
+  , doesAccountExist
   , accountByLogin
   ) where
 
@@ -25,6 +27,7 @@ module Sthenauth.Core.AuthN
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Control.Arrow (returnA)
+import Data.Time.Clock (utctDay)
 import Iolaus.Crypto (MonadCrypto)
 import qualified Iolaus.Crypto as Crypto
 import Iolaus.Database
@@ -37,10 +40,43 @@ import Sthenauth.Tables.Account (Account)
 import qualified Sthenauth.Tables.Account as Account
 import qualified Sthenauth.Tables.Email as Email
 import Sthenauth.Tables.Util
+import Sthenauth.Types hiding (Address, getAddress)
 import Sthenauth.Types.Email
-import Sthenauth.Types.Login hiding (login)
-import Sthenauth.Types.Secrets
-import Sthenauth.Types.Username
+
+--------------------------------------------------------------------------------
+-- Verify that the given password text is strong enough to be hashed.
+asStrongPassword
+  :: ( MonadCrypto m
+     , MonadError e m
+     , MonadReader r m
+     , HasConfig r
+     , AsUserError e
+     )
+  => UTCTime
+  -> Text
+  -> m (Crypto.Password Crypto.Strong)
+asStrongPassword time input = do
+  zc <- views config zxcvbnConfig
+  p  <- Crypto.password input >>= Crypto.strength zc (utctDay time)
+  either (throwing _WeakPasswordError) pure p
+
+--------------------------------------------------------------------------------
+-- | Verify and has the given password.
+hashAsPassword
+  :: ( MonadCrypto m
+     , MonadError e m
+     , MonadReader r m
+     , HasSecrets r
+     , HasConfig r
+     , AsUserError e
+     )
+  => UTCTime
+  -> Text
+  -> m (Crypto.Password Crypto.Hashed)
+hashAsPassword time input = do
+  salt <- view (secrets.systemSalt)
+  p <- asStrongPassword time input
+  Crypto.hash salt p
 
 --------------------------------------------------------------------------------
 -- FIXME: use selectFold or maybe just select the ID column.
@@ -52,8 +88,8 @@ doesAccountExist
      )
   => Login
   -> m Bool
-doesAccountExist login = do
-  query <- accountByLogin login
+doesAccountExist l = do
+  query <- accountByLogin l
 
   liftQuery $ do
     n <- listToMaybe <$> select (O.countRows $ O.limit 1 query)
@@ -67,10 +103,10 @@ accountByLogin
      )
   => Login
   -> m (O.Query (Account View))
-accountByLogin login = do
+accountByLogin l = do
   salt <- view (secrets.systemSalt)
 
-  case getLogin login of
+  case getLogin l of
     Left  u -> pure $ byUsername u
     Right a -> byAddress <$> Crypto.saltedHash salt (getAddress a)
 
