@@ -38,6 +38,7 @@ data ShellError
   | MissingDefaultConfig FilePath FilePath
   | MissingSecretsFile FilePath
   | ShellException SomeException
+  | InputError Text
   | SystemError Error
 
 makeClassyPrisms ''ShellError
@@ -81,6 +82,11 @@ instance Show ShellError where
     ShellException e ->
       mconcat [ "a error occurred while performing an I/O operation: "
               , show e
+              ]
+
+    InputError t ->
+      mconcat [ "unable to continue due to invalid input: "
+              , toString t
               ]
 
     SystemError e ->

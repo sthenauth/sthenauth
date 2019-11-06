@@ -28,8 +28,6 @@ import System.PosixCompat.Files (setFileCreationMask)
 -- Project Imports:
 import Sthenauth.Shell.Command (Command, runCommand)
 import Sthenauth.Shell.Error
-import qualified Sthenauth.Shell.Info as Info
-import qualified Sthenauth.Shell.Server as Server
 import Sthenauth.Shell.Init
 import Sthenauth.Shell.Options (Options, IsCommand(..), parse)
 import qualified Sthenauth.Shell.Options as Options
@@ -37,10 +35,17 @@ import Sthenauth.Types.Config
 import Sthenauth.Types.Secrets
 
 --------------------------------------------------------------------------------
+-- | Sub-commands:
+import qualified Sthenauth.Shell.Admin as Admin
+import qualified Sthenauth.Shell.Info as Info
+import qualified Sthenauth.Shell.Server as Server
+
+--------------------------------------------------------------------------------
 -- | The various commands that can be executed.
 data Commands
   = InfoCommand
   | ServerCommand
+  | AdminCommand Admin.Action
 
 --------------------------------------------------------------------------------
 -- Command line parser for each command.
@@ -48,6 +53,7 @@ instance IsCommand Commands where
   parseCommand = hsubparser $
     mconcat [ cmd "info" "Display evaluated config" (pure InfoCommand)
             , cmd "server" "Start the HTTP server" (pure ServerCommand)
+            , cmd "admin" "Manage admin accounts" (AdminCommand <$> Admin.options)
             ]
     where
       cmd :: String -> String -> Parser a -> Mod CommandFields a
@@ -72,6 +78,7 @@ run = do
   let cmd = case Options.command options of
              InfoCommand -> Info.run options
              ServerCommand -> Server.run options
+             AdminCommand o -> Admin.run o
 
   runCommand cfg sec (initcmd >> cmd) >>= checkOrDie
 

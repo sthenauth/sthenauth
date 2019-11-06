@@ -63,6 +63,9 @@ newtype Command a = Command
   { unC :: ExceptT ShellError (ReaderT Env IO) a}
   deriving ( Functor, Applicative, Monad
            , MonadIO
+           , MonadThrow
+           , MonadCatch
+           , MonadMask
            , MonadError ShellError
            , MonadReader Env
            )
