@@ -24,7 +24,6 @@ module Sthenauth.Core.Admin
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Control.Arrow (returnA)
-import Data.Time.Clock (addUTCTime)
 import Iolaus.Crypto (encrypt)
 import Iolaus.Database
 import Iolaus.Validation (runValidationEither)
@@ -80,7 +79,7 @@ createSite time sec s = do
   site <- runValidationEither checkSite s >>=
             either (throwing _ValidationError) pure
 
-  let expireIn = nominalSeconds (jwkExpiresIn defaultPolicy)
+  let expireIn = addSeconds (defaultPolicy ^. jwk_expires_in) time
       cryptoKey = sec ^. symmetricKey
 
   (jwk, keyid) <- newJWK Sig
@@ -94,7 +93,7 @@ createSite time sec s = do
         , kid = toFields keyid
         , key_use = toFields Sig
         , key_data = toFields ejwk
-        , expires_at = toFields (addUTCTime expireIn time)
+        , expires_at = toFields expireIn
         }
 
   insertSite site (fromMaybe False $ is_default s) key >>=
