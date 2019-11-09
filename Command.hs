@@ -97,6 +97,6 @@ runCommand cfg sec cmd =
     mkEnv c s =
       Env <$> pure cfg
           <*> pure (zxcvbnConfig cfg)
-          <*> DB.initDatabase (databaseConfig c) Nothing
+          <*> DB.initDatabase (c ^. database) Nothing
           <*> Crypto.initCrypto
           <*> pure s

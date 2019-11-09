@@ -37,7 +37,7 @@ askEmail
      , MonadError e m
      , AsShellError e
      )
-  => m (Email Address)
+  => m Email
 askEmail = askWith emailAction checkEmail
 
 --------------------------------------------------------------------------------
@@ -49,14 +49,14 @@ maybeAskEmail
      , AsShellError e
      )
   => Maybe Text
-  -> m (Email Address)
+  -> m Email
 maybeAskEmail mt = checkOrAsk mt emailAction checkEmail
 
 --------------------------------------------------------------------------------
 -- | Validate an email address.
-checkEmail :: (Monad m) => Text -> m (Either Text (Email Address))
+checkEmail :: (Monad m) => Text -> m (Either Text Email)
 checkEmail t = return $
-  case email t of
+  case toEmail t of
     Nothing -> Left "invalid email address"
     Just e  -> Right e
 

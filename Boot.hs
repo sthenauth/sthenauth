@@ -90,5 +90,5 @@ run = do
     boot :: Options Commands -> Boot
     boot options = do
       (cfg, cmd) <- runInit options
-      sec <- loadSecretsFile $ fromMaybe "/dev/null" (cfg ^. secretsPath)
+      sec <- loadSecretsFile $ fromMaybe "/dev/null" (cfg ^. secrets_path)
       return (cfg, cmd, sec)

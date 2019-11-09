@@ -89,7 +89,7 @@ initConfig options = do
     newConfig = do
       defaults <- shellIO Sthenauth.getDataDir
 
-      let src = defaults </> "config" </> "default.config"
+      let src = defaults </> "config" </> "default.yml"
           dst = Options.config options
 
       exists <- shellIO $ doesFileExist src
@@ -116,7 +116,7 @@ initSecrets
   -> Config
   -> m Config
 initSecrets options cfg = do
-  let src  = Options.secrets options <|> cfg ^. secretsPath
+  let src  = Options.secrets options <|> cfg ^. secrets_path
       def  = Options.private options </> "secrets.json"
       path = fromMaybe def src
 
@@ -131,7 +131,7 @@ initSecrets options cfg = do
     go file = shellIO generateSecrets >>= saveSecretsFile file
 
     done :: FilePath -> m Config
-    done path = pure (cfg & secretsPath ?~ path)
+    done path = pure (cfg & secrets_path ?~ path)
 
 --------------------------------------------------------------------------------
 -- | Initialize the database.
@@ -148,9 +148,9 @@ initDatabase
   -> Config
   -> m (Config, Command ())
 initDatabase opts cfg = do
-  let def = databaseConfig cfg
+  let def = cfg ^. database
       conn = maybe (DB.connectionString def) toText $ Options.dbconn opts
-      cfg' = cfg & database ?~ (def { DB.connectionString = conn })
+      cfg' = cfg & database .~ (def { DB.connectionString = conn })
 
   pure (cfg', go)
 
