@@ -22,7 +22,7 @@ module Sthenauth.Shell.Helpers.Password
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Data.Time.Clock (getCurrentTime)
-import Iolaus.Crypto
+import Iolaus.Crypto as Crypto
 import System.Console.Byline
 
 --------------------------------------------------------------------------------
@@ -46,7 +46,7 @@ newPasswordAction = go
   where
     go = do
       p <- askPassword "New Password: " Nothing
-      s <- lift (checkPasswordStrength p) >>= \case
+      s <- lift (checkPasswordStrength . Crypto.password $ p) >>= \case
         Left e -> say (fg red <> text e) >> go
         Right x -> return x
       p' <- askPassword "Confirm Password: " Nothing
@@ -89,7 +89,7 @@ maybeAskNewPassword
   -> m (Password Strong)
 maybeAskNewPassword = \case
   Nothing -> askNewPassword
-  Just t -> checkPasswordStrength t >>= \case
+  Just t -> checkPasswordStrength (Crypto.password t) >>= \case
     Left e -> throwing _InputError e
     Right p -> return p
 
@@ -103,7 +103,7 @@ checkPasswordStrength
      , MonadReader r m
      , HasConfig r
      )
-  => Text
+  => Password Clear
   -> m (Either Text (Password Strong))
 checkPasswordStrength p = do
   time <- liftIO getCurrentTime

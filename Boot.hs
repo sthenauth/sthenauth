@@ -1,3 +1,5 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 {-|
 
 Copyright:
@@ -23,6 +25,7 @@ module Sthenauth.Shell.Boot
 import Options.Applicative
 import System.Exit (die)
 import System.PosixCompat.Files (setFileCreationMask)
+import Iolaus.Crypto (Crypto, initCrypto, runCrypto)
 
 --------------------------------------------------------------------------------
 -- Project Imports:
@@ -60,7 +63,15 @@ instance IsCommand Commands where
       cmd name desc p = command name (info p (progDesc desc))
 
 --------------------------------------------------------------------------------
-type Boot = ExceptT ShellError IO (Config, Command (), Secrets)
+newtype Boot a = Boot
+  { runBoot :: ExceptT ShellError (ReaderT Crypto IO) a }
+  deriving ( Functor, Applicative, Monad, MonadIO
+           , MonadError ShellError
+           , MonadReader Crypto
+           )
+
+instance MonadCrypto Boot where
+  liftCrypto = runCrypto
 
 --------------------------------------------------------------------------------
 -- | Main entry point.
@@ -73,21 +84,25 @@ run = do
   options <- parse :: IO (Options Commands)
 
   -- FIXME: We need a way to make the block cipher selectable at run time.
-  (cfg, initcmd, sec) <- runExceptT (boot options) >>= checkOrDie
+  crypto <- initCrypto
+
+  (cfg, initcmd, sec) <-
+    usingReaderT crypto (runExceptT (runBoot $ boot options)) >>=
+    checkOrDie
 
   let cmd = case Options.command options of
              InfoCommand -> Info.run options
              ServerCommand -> Server.run options
              AdminCommand o -> Admin.run o
 
-  runCommand cfg sec (initcmd >> cmd) >>= checkOrDie
+  runCommand cfg sec crypto (initcmd >> cmd) >>= checkOrDie
 
   where
     checkOrDie :: Either ShellError a -> IO a
     checkOrDie (Right a) = pure a
     checkOrDie (Left e)  = die (show e)
 
-    boot :: Options Commands -> Boot
+    boot :: Options Commands -> Boot (Config, Command (), Secrets)
     boot options = do
       (cfg, cmd) <- runInit options
       sec <- loadSecretsFile $ fromMaybe "/dev/null" (cfg ^. secrets_path)

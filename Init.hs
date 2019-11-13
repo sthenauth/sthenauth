@@ -55,6 +55,7 @@ import Sthenauth.Types.Secrets
 --
 runInit
   :: ( MonadIO m
+     , MonadCrypto m
      , MonadError e m
      , AsShellError e
      )
@@ -109,6 +110,7 @@ initConfig options = do
 initSecrets
   :: forall e m a.
   ( MonadIO m
+  , MonadCrypto m
   , MonadError e m
   , AsShellError e
   )
@@ -128,7 +130,7 @@ initSecrets options cfg = do
 
   where
     go :: FilePath -> m ()
-    go file = shellIO generateSecrets >>= saveSecretsFile file
+    go file = generateSecrets >>= saveSecretsFile file
 
     done :: FilePath -> m Config
     done path = pure (cfg & secrets_path ?~ path)

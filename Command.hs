@@ -30,6 +30,7 @@ module Sthenauth.Shell.Command
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Control.Lens.TH (makeClassy)
+import Iolaus.Crypto (Crypto)
 import qualified Iolaus.Crypto as Crypto
 import qualified Iolaus.Database as DB
 import qualified Text.Password.Strength.Config as Zxcvbn
@@ -76,18 +77,16 @@ instance DB.MonadDB Command where
 instance Crypto.MonadCrypto Command where
   liftCrypto = Crypto.runCrypto
 
-instance MonadRandom Command where
-  getRandomBytes = liftIO . getRandomBytes
-
 --------------------------------------------------------------------------------
 -- | Execute a 'Command'.
 runCommand
   :: (MonadIO m)
   => Config
   -> Secrets
+  -> Crypto
   -> Command a
   -> m (Either ShellError a)
-runCommand cfg sec cmd =
+runCommand cfg sec crypto cmd =
   liftIO $ runExceptT $ do
     e <- mkEnv cfg sec
     mapExceptT (`runReaderT` e) (unC cmd)
@@ -98,5 +97,5 @@ runCommand cfg sec cmd =
       Env <$> pure cfg
           <*> pure (zxcvbnConfig cfg)
           <*> DB.initDatabase (c ^. database) Nothing
-          <*> Crypto.initCrypto
+          <*> pure crypto
           <*> pure s
