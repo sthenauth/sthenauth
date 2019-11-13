@@ -42,6 +42,7 @@ type SCU = SC ()
 -- | Servant API type.
 type API = "keys"   :> Get '[JSON] JWKSet
       :<|> "login"  :> ReqBody '[JSON] Credentials :> Post '[JSON] (SC PostLogin)
+      :<|> "create" :> ReqBody '[JSON] Credentials :> Post '[JSON] (SC PostLogin)
       :<|> "logout" :> Delete '[JSON] SCU
 
 --------------------------------------------------------------------------------
@@ -49,13 +50,19 @@ type API = "keys"   :> Get '[JSON] JWKSet
 app :: ServerT API Sthenauth
 app =  activeSiteKeys
   :<|> maybeAuthenticate
+  :<|> maybeCreateNewLocalAccount
   :<|> logoutAndDeleteCookie
 
   where
     maybeAuthenticate :: Credentials -> Sthenauth (SC PostLogin)
     maybeAuthenticate c = do
-      (session, postLogin) <- authenticate c
-      return $ addHeader (makeSessionCookie "ss" session) postLogin
+      (session, clear, postLogin) <- authenticate c
+      return $ addHeader (makeSessionCookie "ss" clear session) postLogin
+
+    maybeCreateNewLocalAccount :: Credentials -> Sthenauth (SC PostLogin)
+    maybeCreateNewLocalAccount c = do
+      (session, clear, postLogin) <- createNewLocalAccount c
+      return $ addHeader (makeSessionCookie "ss" clear session) postLogin
 
     logoutAndDeleteCookie :: Sthenauth SCU
     logoutAndDeleteCookie =

@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 {-|
 
@@ -23,6 +23,7 @@ module Sthenauth.API.Server
 --------------------------------------------------------------------------------
 -- Library Imports:
 import qualified Data.Vault.Lazy as Vault
+import qualified Network.Wai as Wai
 import qualified Network.Wai.Handler.Warp as Warp
 import Servant.API
 import Servant.Server
@@ -34,9 +35,9 @@ import System.FilePath
 import qualified Paths_sthenauth as Sthenauth
 import Sthenauth.API.Handlers
 import Sthenauth.API.Middleware
+import Sthenauth.API.Log
 import Sthenauth.API.Monad
 import qualified Sthenauth.Shell.Command as Command
-import Sthenauth.Types
 
 --------------------------------------------------------------------------------
 -- | The final API which includes a file server for the UI files.
@@ -54,16 +55,16 @@ finalapi = Proxy
 
 --------------------------------------------------------------------------------
 -- | A server for the 'Sthenauth' API.
-apiServer :: Command.Env -> Remote -> Server API
-apiServer e r = hoistServer api (runRequest e r) app
+apiServer :: Command.Env -> Client -> Logger -> Server API
+apiServer env client logger = hoistServer api (runRequest env client logger) app
 
 --------------------------------------------------------------------------------
 -- | A server for the final API.
-server :: Command.Env -> Vault.Key Remote -> FilePath -> Server FinalAPI
-server env rkey path vault =
-  case Vault.lookup rkey vault of
-    Nothing -> error "shouldn't happen"
-    Just r  -> apiServer env r :<|> serveDir path
+server :: Command.Env -> Vault.Key Client -> Logger -> FilePath -> Server FinalAPI
+server env key logger path vault =
+  case Vault.lookup key vault of
+    Nothing     -> error "shouldn't happen"
+    Just client -> apiServer env client logger :<|> serveDir path
 
   where
     serveDir :: FilePath -> ServerT Raw m0
@@ -76,5 +77,8 @@ run :: Command.Env -> IO ()
 run e = do
   path <- Sthenauth.getDataDir
   rkey <- Vault.newKey
-  let server' = server e rkey (path </> "www")
-  Warp.run 3001 (middleware rkey $ serve finalapi server')
+
+  withLogger (fmap fst . Vault.lookup rkey . Wai.vault) $ \logger -> do
+    let settings = Warp.defaultSettings & Warp.setPort 3001
+        server'  = serve finalapi (server e rkey logger (path </> "www"))
+    Warp.runSettings settings (middleware rkey logger server')

@@ -15,7 +15,8 @@ License: Apache-2.0
 
 -}
 module Sthenauth.API.Middleware
-  ( middleware
+  ( Client
+  , middleware
   ) where
 
 --------------------------------------------------------------------------------
@@ -29,28 +30,33 @@ import qualified Network.Wai as Wai
 
 --------------------------------------------------------------------------------
 -- Project Imports:
+import Sthenauth.API.Log
+import Sthenauth.Tables.Session (ClearSessionKey(..))
 import Sthenauth.Types
-import Sthenauth.Tables.Util (getKey)
+
+--------------------------------------------------------------------------------
+-- | Details about a client:
+type Client = (Remote , Maybe ClearSessionKey)
 
 --------------------------------------------------------------------------------
 -- | A middleware that creates a 'Remote' value and stores it into the
 -- request vault.
-remoteFromRequest :: Vault.Key Remote -> Wai.Middleware
-remoteFromRequest rkey downstream req res = do
+clientFromRequest :: Vault.Key Client -> Wai.Middleware
+clientFromRequest key downstream req res = do
   let headers = Wai.requestHeaders req
 
   rid <- requestIdFromHeaders headers
   now <- getCurrentTime
 
-  let r = Remote { address = remoteAddr headers (Wai.remoteHost req)
+  let skey = sessionKeyFromHeaders headers
+      r = Remote { address = remoteAddr headers (Wai.remoteHost req)
                  , user_agent = userAgent headers
                  , request_fqdn = hostFQDN headers
                  , request_id = rid
                  , request_time = now
-                 , session_id = getKey <$> sessionIdFromHeaders headers
                  }
 
-  let v = Vault.insert rkey r (Wai.vault req)
+  let v = Vault.insert key (r, skey) (Wai.vault req)
   downstream (req {Wai.vault = v}) res
 
   where
@@ -66,6 +72,18 @@ remoteFromRequest rkey downstream req res = do
       in fromMaybe (fromSockAddr sa) fromHeader
 
 --------------------------------------------------------------------------------
+-- | Middleware that logs the response from downstream.
+logResponse :: Logger -> Wai.Middleware
+logResponse logger downstream req respond =
+    downstream req go
+
+  where
+    go :: Wai.Response -> IO Wai.ResponseReceived
+    go response = do
+      logger_wai logger req (Wai.responseStatus response)
+      respond response
+
+--------------------------------------------------------------------------------
 -- | All middleware components composed together.
-middleware :: Vault.Key Remote -> Wai.Middleware
-middleware = remoteFromRequest
+middleware :: Vault.Key Client -> Logger -> Wai.Middleware
+middleware k l = clientFromRequest k . logResponse l
