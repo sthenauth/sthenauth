@@ -66,7 +66,6 @@ insertSite site def keyf = transaction $ do
 createSite
   :: ( MonadCrypto m
      , MonadDB m
-     , MonadRandom m
      , MonadError e m
      , AsError e
      , AsUserError e

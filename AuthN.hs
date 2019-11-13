@@ -40,7 +40,7 @@ import qualified Opaleye as O
 import Sthenauth.Tables.Account (Account, AccountId)
 import qualified Sthenauth.Tables.Account as Account
 import qualified Sthenauth.Tables.Email as Email
-import Sthenauth.Tables.Session (Session)
+import Sthenauth.Tables.Session (Session, ClearSessionKey)
 import qualified Sthenauth.Tables.Session as Session
 import Sthenauth.Tables.Site (Site, SiteId)
 import qualified Sthenauth.Tables.Site as Site
@@ -57,11 +57,11 @@ asStrongPassword
      , AsUserError e
      )
   => UTCTime
-  -> Text
+  -> Password Clear
   -> m (Password Strong)
 asStrongPassword time input = do
   zc <- views config zxcvbnConfig
-  p  <- passwordM input >>= strengthM zc (utctDay time)
+  p  <- strengthM zc (utctDay time) input
   either (throwing _WeakPasswordError) pure p
 
 --------------------------------------------------------------------------------
@@ -75,7 +75,7 @@ hashAsPassword
      , AsUserError e
      )
   => UTCTime
-  -> Text
+  -> Password Clear
   -> m (Password Hashed)
 hashAsPassword time input = do
   salt <- view (secrets.systemSalt)
@@ -217,24 +217,28 @@ accountByLogin sid l = do
 -- Issue a brand new session to the given account.
 issueSession
   :: ( MonadDB m
+     , MonadCrypto m
      , MonadError e m
      , AsError e
      , MonadReader r m
      , HasConfig r
      , HasRemote r
+     , HasSecrets r
      )
   => Site Id
   -> Account Id
-  -> m (Session Id, PostLogin)
+  -> m (Session Id, ClearSessionKey, PostLogin)
 issueSession s a = do
   r <- view remote
   c <- view config
 
+  (clear, key) <- Session.newSessionKey
+
   let e = sessionExpire (Site.policy s) (request_time r)
-      sessionW = Session.newSession (Account.pk a) r e
+      sessionW = Session.newSession (Account.pk a) r e key
       query = Session.insertSession (c ^. max_sessions_per_account) sessionW
       postLogin = Site.postLogin s
 
   transaction query >>= \case
     Nothing -> throwing _RuntimeError "failed to create a session"
-    Just session -> return (session, postLogin)
+    Just session -> return (session, clear, postLogin)
