@@ -1,3 +1,5 @@
+{-# LANGUAGE Arrows #-}
+
 {-|
 
 Copyright:
@@ -14,11 +16,9 @@ Copyright:
 License: Apache-2.0
 
 -}
-{-# LANGUAGE Arrows #-}
-
 module Sthenauth.Core.Admin
   ( createSite
-  , siteFromRemote
+  , siteFromFQDN
   ) where
 
 --------------------------------------------------------------------------------
@@ -29,19 +29,16 @@ import Iolaus.Database
 import Iolaus.Validation (runValidationEither)
 import Opaleye (Insert(..), rReturning, rCount, (.==), (.||))
 import qualified Opaleye as O
+import qualified Data.UUID as UUID
 import Opaleye.ToFields (toFields)
 
 --------------------------------------------------------------------------------
 -- Project Imports:
 import Sthenauth.Tables.Site as Site
-import Sthenauth.Tables.Site.Key as SiteKey
 import Sthenauth.Tables.Site.Alias as SiteAlias
+import Sthenauth.Tables.Site.Key as SiteKey
 import Sthenauth.Tables.Util
-import Sthenauth.Types.Error
-import Sthenauth.Types.JWK
-import Sthenauth.Types.Policy
-import Sthenauth.Types.Remote
-import Sthenauth.Types.Secrets
+import Sthenauth.Types
 
 --------------------------------------------------------------------------------
 -- | Try to insert a new site into the database.
@@ -100,12 +97,12 @@ createSite time sec s = do
 
 --------------------------------------------------------------------------------
 -- | Locate the active site.
-siteFromRemote
+siteFromFQDN
   :: ( MonadDB m
      )
-  => Remote
+  => Text
   -> m (Maybe (Site Id))
-siteFromRemote Remote{request_fqdn} =
+siteFromFQDN fqdn =
   listToMaybe <$> liftQuery
     (select $ O.orderBy (O.asc is_default) $ O.limit 1 query)
 
@@ -117,16 +114,21 @@ siteFromRemote Remote{request_fqdn} =
       (_, domain) <- aliasJoin -< t1
 
           -- 1. Request domain matches the site's FQDN.
-      let siteMatch = Site.fqdn t1 `lowerEq` request_fqdn
+      let siteMatch = Site.fqdn t1 `lowerEq` fqdn
 
-          -- 2. Request domain matches a site alias' FQDN.
-          aliasMatch = O.matchNullable (O.sqlBool False)
-                       (`lowerEq` request_fqdn) domain
+          -- 2. UUID match (mostly for command line and testing).
+          uuidMatch = case UUID.fromText fqdn of
+                        Nothing -> toFields False
+                        Just u  -> Site.pk t1 .== toFields u
 
-          -- 3. The site is marked as the default site.
+          -- 3. Request domain matches a site alias' FQDN.
+          aliasMatch = O.matchNullable (toFields False)
+                       (`lowerEq` fqdn) domain
+
+          -- 4. The site is marked as the default site.
           defaultMatch = Site.is_default t1
 
-      O.restrict -< (siteMatch .|| aliasMatch .|| defaultMatch)
+      O.restrict -< (siteMatch .|| uuidMatch .|| aliasMatch .|| defaultMatch)
       returnA -< t1
 
     -- Join the site and site_aliases tables.

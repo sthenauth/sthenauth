@@ -24,15 +24,15 @@ module Sthenauth.Core.AuthN
   , getAccountFromLogin
   , accountByLogin
   , issueSession
+  , resumeSession
   ) where
 
 --------------------------------------------------------------------------------
 -- Library Imports:
-import Control.Arrow (returnA)
 import Data.Time.Clock (utctDay)
 import Iolaus.Crypto
 import Iolaus.Database
-import Opaleye ((.==), (.&&))
+import Opaleye ((.==))
 import qualified Opaleye as O
 
 --------------------------------------------------------------------------------
@@ -43,7 +43,7 @@ import qualified Sthenauth.Tables.Email as Email
 import Sthenauth.Tables.Session (Session, ClearSessionKey)
 import qualified Sthenauth.Tables.Session as Session
 import Sthenauth.Tables.Site (Site, SiteId)
-import qualified Sthenauth.Tables.Site as Site
+import Sthenauth.Tables.Site as Site
 import Sthenauth.Tables.Util
 import Sthenauth.Types
 
@@ -63,24 +63,21 @@ asStrongPassword time input = do
   zc <- views config zxcvbnConfig
   p  <- strengthM zc (utctDay time) input
   either (throwing _WeakPasswordError) pure p
+  -- FIXME: validate the length of the password after it is
+  -- normalized.
 
 --------------------------------------------------------------------------------
 -- | Verify and has the given password.
 hashAsPassword
   :: ( MonadCrypto m
-     , MonadError e m
      , MonadReader r m
      , HasSecrets r
-     , HasConfig r
-     , AsUserError e
      )
-  => UTCTime
-  -> Password Clear
+  => Password Strong
   -> m (Password Hashed)
-hashAsPassword time input = do
+hashAsPassword input = do
   salt <- view (secrets.systemSalt)
-  p <- asStrongPassword time input
-  hash salt p
+  hash salt input
 
 --------------------------------------------------------------------------------
 -- | Returns 'True' if the given password matches the account.
@@ -126,7 +123,7 @@ upgradePassword
   -> AccountId
   -> m ()
 upgradePassword pw aid = do
-  time <- views remote request_time
+  time <- view (remote.request_time)
   salt <- view (secrets.systemSalt)
   zc <- views config zxcvbnConfig
   ps <- strengthM zc (utctDay time) pw
@@ -185,33 +182,18 @@ accountByLogin sid l = do
   salt <- view (secrets.systemSalt)
 
   case getLogin l of
-    Left  u -> pure $ byUsername u
-    Right e -> byAddress <$> saltedHash salt (getEmail e)
+    Left  u -> pure $ query (Account.findAccountByUsername u)
+    Right e -> query . Email.findAccountByEmail <$> saltedHash salt (getEmail e)
 
   where
-    -- Find an account with a username.
-    byUsername :: Username -> O.Query (Account View)
-    byUsername u = proc () -> do
-      a <- O.selectTable Account.accounts -< ()
-      O.restrict -< Account.site_id a .== O.toFields sid
-      O.restrict -< O.matchNullable
-                      (O.sqlBool False)
-                      (`lowerEq` getUsername u)
-                      (Account.username a)
-      returnA -< a
-
-    -- Find an account based on an email address.
-    byAddress :: SaltedHash Text -> O.Query (Account View)
-    byAddress ehash = proc () -> do
-      a <- O.selectTable Account.accounts -< ()
-      e <- O.selectTable Email.emails -< ()
-
-      O.restrict -<
-        Account.site_id a .== O.toFields sid .&&
-        Email.site_id e .== O.toFields sid .&&
-        Email.emailHashed e .== O.toNullable (sqlValueJSONB ehash)
-
-      returnA -< a
+    -- Restrict the accounts table then run a sub-query.
+    query
+      :: O.SelectArr (Account View) (Account View)
+      -> O.Select (Account View)
+    query sub = proc () -> do
+      t1 <- O.selectTable Account.accounts -< ()
+      O.restrict -< Account.site_id t1 .== O.toFields sid
+      sub -< t1
 
 --------------------------------------------------------------------------------
 -- Issue a brand new session to the given account.
@@ -234,11 +216,32 @@ issueSession s a = do
 
   (clear, key) <- Session.newSessionKey
 
-  let e = sessionExpire (Site.policy s) (request_time r)
-      sessionW = Session.newSession (Account.pk a) r e key
+  let sessionW = Session.newSession (Account.pk a) r (Site.policy s) key
       query = Session.insertSession (c ^. max_sessions_per_account) sessionW
-      postLogin = Site.postLogin s
+      plogin = Site.postLogin s
 
   transaction query >>= \case
     Nothing -> throwing _RuntimeError "failed to create a session"
-    Just session -> return (session, clear, postLogin)
+    Just session -> return (session, clear, plogin)
+
+--------------------------------------------------------------------------------
+-- | Resume an existing session (sets the 'currentUser' state field.)
+resumeSession
+  :: ( MonadDB m
+     , MonadCrypto m
+     , MonadReader r m
+     , MaybeHasSite r
+     , HasRemote r
+     , HasSecrets r
+     , MonadState s m
+     , HasCurrentUser s
+     )
+  => ClearSessionKey
+  -> m CurrentUser
+resumeSession key = do
+  user <- view maybeSite >>= \case
+    Nothing   -> return notLoggedIn
+    Just site -> currentUserFromSessionKey (Site.pk site) key
+
+  assign currentUser user
+  return user
