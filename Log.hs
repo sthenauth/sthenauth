@@ -65,20 +65,20 @@ withLogger getRemote f = bracket open snd (go . fst)
 
     -- How to log 'Remote' values.
     formatRemote :: Maybe Remote -> LogStr -> LogStr
-    formatRemote Nothing           others = "[] - - - " <> others <> " - \n"
-    formatRemote (Just Remote{..}) others = mconcat
+    formatRemote Nothing  others = "[] - - - " <> others <> " - \n"
+    formatRemote (Just r) others = mconcat
       [ " ["
-      , toLogStr (formatTime defaultTimeLocale timeFormat request_time)
+      , toLogStr (formatTime defaultTimeLocale timeFormat (r ^. request_time))
       , "] "
-      , toLogStr (UUID.toASCIIBytes request_id)
+      , toLogStr (UUID.toASCIIBytes (r ^. request_id))
       , " "
-      , toLogStr (encodeAddress address)
+      , toLogStr (encodeAddress (r ^. address))
       , " "
-      , toLogStr request_fqdn
+      , toLogStr (r ^. request_fqdn)
       , " "
       , others
       , " "
-      , toLogStr user_agent
+      , toLogStr (r ^. user_agent)
       , "\n"
       ]
 

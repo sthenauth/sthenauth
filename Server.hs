@@ -37,7 +37,7 @@ import Sthenauth.API.Handlers
 import Sthenauth.API.Middleware
 import Sthenauth.API.Log
 import Sthenauth.API.Monad
-import qualified Sthenauth.Shell.Command as Command
+import Sthenauth.Lang.Script hiding (env)
 
 --------------------------------------------------------------------------------
 -- | The final API which includes a file server for the UI files.
@@ -55,12 +55,12 @@ finalapi = Proxy
 
 --------------------------------------------------------------------------------
 -- | A server for the 'Sthenauth' API.
-apiServer :: Command.Env -> Client -> Logger -> Server API
+apiServer :: PartialEnv -> Client -> Logger -> Server API
 apiServer env client logger = hoistServer api (runRequest env client logger) app
 
 --------------------------------------------------------------------------------
 -- | A server for the final API.
-server :: Command.Env -> Vault.Key Client -> Logger -> FilePath -> Server FinalAPI
+server :: PartialEnv -> Vault.Key Client -> Logger -> FilePath -> Server FinalAPI
 server env key logger path vault =
   case Vault.lookup key vault of
     Nothing     -> error "shouldn't happen"
@@ -73,7 +73,7 @@ server env key logger path vault =
 
 --------------------------------------------------------------------------------
 -- | Run the actual web server.
-run :: Command.Env -> IO ()
+run :: PartialEnv -> IO ()
 run e = do
   path <- Sthenauth.getDataDir
   rkey <- Vault.newKey

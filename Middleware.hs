@@ -49,11 +49,11 @@ clientFromRequest key downstream req res = do
   now <- getCurrentTime
 
   let skey = sessionKeyFromHeaders headers
-      r = Remote { address = remoteAddr headers (Wai.remoteHost req)
-                 , user_agent = userAgent headers
-                 , request_fqdn = hostFQDN headers
-                 , request_id = rid
-                 , request_time = now
+      r = Remote { _address      = remoteAddr headers (Wai.remoteHost req)
+                 , _user_agent   = userAgent headers
+                 , _request_fqdn = hostFQDN headers
+                 , _request_id   = rid
+                 , _request_time = now
                  }
 
   let v = Vault.insert key (r, skey) (Wai.vault req)
