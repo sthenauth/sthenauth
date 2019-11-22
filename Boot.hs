@@ -22,40 +22,46 @@ module Sthenauth.Shell.Boot
 
 --------------------------------------------------------------------------------
 -- Library Imports:
+import Iolaus.Crypto (Crypto, initCrypto, runCrypto)
+import qualified Iolaus.Database as DB
 import Options.Applicative
 import System.Exit (die)
 import System.PosixCompat.Files (setFileCreationMask)
-import Iolaus.Crypto (Crypto, initCrypto, runCrypto)
 
 --------------------------------------------------------------------------------
 -- Project Imports:
-import Sthenauth.Shell.Command (Command, runCommand)
+import Sthenauth.Shell.Command
 import Sthenauth.Shell.Error
 import Sthenauth.Shell.Init
 import Sthenauth.Shell.Options (Options, IsCommand(..), parse)
 import qualified Sthenauth.Shell.Options as Options
-import Sthenauth.Types.Config
-import Sthenauth.Types.Secrets
+import Sthenauth.Types
+import Sthenauth.Lang.Script
 
 --------------------------------------------------------------------------------
--- | Sub-commands:
+-- Sub-commands:
 import qualified Sthenauth.Shell.Admin as Admin
 import qualified Sthenauth.Shell.Info as Info
+import qualified Sthenauth.Shell.Policy as Policy
 import qualified Sthenauth.Shell.Server as Server
 
 --------------------------------------------------------------------------------
 -- | The various commands that can be executed.
 data Commands
-  = InfoCommand
+  = InitCommand
   | ServerCommand
+  | InfoCommand
+  | PolicyCommand Policy.SubCommand
   | AdminCommand Admin.Action
 
 --------------------------------------------------------------------------------
 -- Command line parser for each command.
 instance IsCommand Commands where
   parseCommand = hsubparser $
-    mconcat [ cmd "info" "Display evaluated config" (pure InfoCommand)
+    mconcat [ cmd "init" "Interactive system initialization" (pure InitCommand)
             , cmd "server" "Start the HTTP server" (pure ServerCommand)
+            , cmd "info" "Display evaluated config" (pure InfoCommand)
+            , cmd "policy" "Edit site policy settings" (PolicyCommand <$> Policy.options)
             , cmd "admin" "Manage admin accounts" (AdminCommand <$> Admin.options)
             ]
     where
@@ -81,8 +87,9 @@ run = do
   void (setFileCreationMask 0o077)
 
   -- Option parsing and processing:
-  options <- parse :: IO (Options Commands)
+  options <- enableImplicitOptions <$> parse
 
+  -- Init the crypto library.
   -- FIXME: We need a way to make the block cipher selectable at run time.
   crypto <- initCrypto
 
@@ -90,12 +97,22 @@ run = do
     usingReaderT crypto (runExceptT (runBoot $ boot options)) >>=
     checkOrDie
 
-  let cmd = case Options.command options of
-             InfoCommand -> Info.run options
-             ServerCommand -> Server.run options
-             AdminCommand o -> Admin.run o
+  -- Init the database.
+  db <- DB.initDatabase (cfg ^. database) Nothing
 
-  runCommand cfg sec crypto (initcmd >> cmd) >>= checkOrDie
+  let partialEnv eremote =
+        Env { _env_config  = cfg
+            , _env_db      = db
+            , _env_crypto  = crypto
+            , _env_secrets = sec
+            , _env_remote  = eremote
+            , _env_site    = Nothing
+            }
+
+  let (io, cmd) = dispatch options partialEnv
+  runBootCommand options partialEnv initcmd >>= checkOrDie
+  whenJust cmd (runCommand options partialEnv >=> checkOrDie)
+  io
 
   where
     checkOrDie :: Either ShellError a -> IO a
@@ -107,3 +124,23 @@ run = do
       (cfg, cmd) <- runInit options
       sec <- loadSecretsFile $ fromMaybe "/dev/null" (cfg ^. secrets_path)
       return (cfg, cmd, sec)
+
+    dispatch :: Options Commands -> PartialEnv -> (IO (), Maybe (Command ()))
+    dispatch options penv =
+      case Options.command options of
+        InitCommand     -> (initInteractive options penv, Nothing)
+        ServerCommand   -> (Server.run options penv, Nothing)
+        InfoCommand     -> (pass, Just (Info.run options))
+        PolicyCommand o -> (pass, Just (Policy.run o))
+        AdminCommand o  -> (pass, Just (Admin.run o))
+
+--------------------------------------------------------------------------------
+-- | Some commands imply some of the global options.
+enableImplicitOptions :: Options Commands -> Options Commands
+enableImplicitOptions input =
+  case Options.command input of
+    InitCommand     -> input { Options.init = True, Options.migrate = True }
+    ServerCommand   -> input
+    InfoCommand     -> input
+    PolicyCommand _ -> input
+    AdminCommand _  -> input

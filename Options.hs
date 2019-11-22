@@ -46,6 +46,10 @@ data Options a = Options
   , private  :: FilePath
   , dbconn   :: Maybe String
   , secrets  :: Maybe FilePath
+  , site     :: Maybe Text
+  , session  :: Maybe Text
+  , email    :: Maybe Text
+  , password :: Maybe Text
   , command  :: a
   }
 
@@ -60,6 +64,10 @@ parser env =
           <*> optPrivate "PRIVATE_DIR"
           <*> ((Just <$> optDbconn "DB") <|> pure Nothing)
           <*> ((Just <$> optSecrets "SECRETS_PATH") <|> pure Nothing)
+          <*> optSite
+          <*> optSession
+          <*> optional (option str (long "email"    <> hidden))
+          <*> optional (option str (long "password" <> hidden))
           <*> parseCommand
 
   where
@@ -114,6 +122,20 @@ parser env =
       mconcat [ long "secrets"
               , metavar "PATH"
               , help ("Load the encryption keys from PATH" <> also key)
+              ]
+
+    optSession :: Parser (Maybe Text)
+    optSession = optional $ option str $
+      mconcat [ long "session"
+              , metavar "STR"
+              , help "Resume the session given in STR"
+              ]
+
+    optSite :: Parser (Maybe Text)
+    optSite = optional $ option str $
+      mconcat [ long "site"
+              , metavar "STR"
+              , help "Site FQDN, UUID, or alias FQDN"
               ]
 
     envPrefix :: String

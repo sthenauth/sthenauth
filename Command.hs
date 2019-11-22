@@ -1,7 +1,4 @@
-{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE TypeFamilies               #-}
 
 {-|
 
@@ -21,81 +18,103 @@ License: Apache-2.0
 -}
 module Sthenauth.Shell.Command
   ( Command
-  , Env
-  , HasEnv(..)
   , runCommand
+  , runCommandSansAuth
+  , runBootCommand
+  , liftByline
+  , liftSthenauth
   , config
   ) where
 
 --------------------------------------------------------------------------------
 -- Library Imports:
-import Control.Lens.TH (makeClassy)
-import Iolaus.Crypto (Crypto)
+import Data.Time.Clock (getCurrentTime)
 import qualified Iolaus.Crypto as Crypto
 import qualified Iolaus.Database as DB
-import qualified Text.Password.Strength.Config as Zxcvbn
 
 --------------------------------------------------------------------------------
 -- Project Imports:
+import Sthenauth.Lang.Class
+import Sthenauth.Lang.Script
+import Sthenauth.Shell.AuthN
+import Sthenauth.Shell.Byline
 import Sthenauth.Shell.Error
-import Sthenauth.Types.Config
-import Sthenauth.Types.Secrets
-
---------------------------------------------------------------------------------
--- | Run-time environment.
-data Env = Env
-  { _env_config  :: Config
-  , _env_zxcvbn  :: Zxcvbn.Config
-  , _env_db      :: DB.Database -- ^ The Opaleye run time.
-  , _env_crypto  :: Crypto.Crypto -- ^ Crypto environment.
-  , _env_secrets :: Secrets
-  }
-
-makeClassy ''Env
-
-instance DB.HasDatabase Env where database = env_db
-instance Crypto.HasCrypto Env where crypto = env_crypto
-instance HasSecrets Env where secrets = env_secrets
-instance HasConfig Env where config = env_config
+import Sthenauth.Shell.Options (Options, site)
+import qualified Sthenauth.Tables.Site as Site
+import Sthenauth.Types
 
 --------------------------------------------------------------------------------
 -- | A type encapsulating Sthenauth shell commands.
-newtype Command a = Command
-  { unC :: ExceptT ShellError (ReaderT Env IO) a}
+newtype Command a = Command { unC :: Script a }
   deriving ( Functor, Applicative, Monad
            , MonadIO
-           , MonadThrow
-           , MonadCatch
-           , MonadMask
-           , MonadError ShellError
+           , MonadError  Error
+           , MonadState  Store
            , MonadReader Env
+           , MonadSthenauth
+           , MonadByline
+           , DB.MonadDB
+           , Crypto.MonadCrypto
            )
 
-instance DB.MonadDB Command where
-  liftQuery = DB.liftQueryIO
-
-instance Crypto.MonadCrypto Command where
-  liftCrypto = Crypto.runCrypto
-
 --------------------------------------------------------------------------------
--- | Execute a 'Command'.
 runCommand
-  :: (MonadIO m)
-  => Config
-  -> Secrets
-  -> Crypto
+  :: forall m o a.
+     ( MonadIO m )
+  => Options o
+  -> PartialEnv
   -> Command a
   -> m (Either ShellError a)
-runCommand cfg sec crypto cmd =
-  liftIO $ runExceptT $ do
-    e <- mkEnv cfg sec
-    mapExceptT (`runReaderT` e) (unC cmd)
+runCommand opts penv cmd =
+    runCommandSansAuth opts penv go
+  where
+    go :: Command a
+    go = do
+      user <- authenticate opts
+      unless (isAdmin user) (throwing _PermissionDenied ())
+      cmd -- Run the original action.
+
+--------------------------------------------------------------------------------
+-- | Execute a 'Command' without authenticating first.
+runCommandSansAuth
+  :: forall m o a.
+     ( MonadIO m )
+  => Options o
+  -> PartialEnv
+  -> Command a
+  -> m (Either ShellError a)
+runCommandSansAuth opts penv cmd =
+    runBootCommand opts penv (Command go)
+  where
+    go :: Script a
+    go = withSite (site opts) $
+      Site.fqdn <<$>> view env_site >>= \case
+        Nothing   -> unC cmd
+        Just fqdn -> local ((env_remote.request_fqdn) .~ fqdn) (unC cmd)
+
+--------------------------------------------------------------------------------
+-- | Execute a command without any authentication or database access.
+runBootCommand
+  :: forall m o a.
+     ( MonadIO m )
+  => Options o
+  -> PartialEnv
+  -> Command a
+  -> m (Either ShellError a)
+runBootCommand opts penv cmd = do
+    e <- penv <$> liftIO mkRemote
+    first SystemError . fst <$> runScript e (unC cmd)
 
   where
-    mkEnv :: Config -> Secrets -> ExceptT ShellError IO Env
-    mkEnv c s =
-      Env <$> pure cfg
-          <*> pure (zxcvbnConfig cfg)
-          <*> DB.initDatabase (c ^. database) Nothing
-          <*> pure crypto
-          <*> pure s
+    mkRemote :: IO Remote
+    mkRemote = do
+      rid <- genRequestId
+      time <- liftIO getCurrentTime
+
+      return Remote
+        { _address      = localhost
+        , _user_agent   = "Sthenauth Command Line"
+        , _request_fqdn = fromMaybe "default" (site opts)
+        , _request_id   = rid
+        , _request_time = time
+        }
