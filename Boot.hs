@@ -22,7 +22,7 @@ module Sthenauth.Shell.Boot
 
 --------------------------------------------------------------------------------
 -- Library Imports:
-import Iolaus.Crypto (Crypto, initCrypto, runCrypto)
+import Iolaus.Crypto.Cryptonite
 import qualified Iolaus.Database as DB
 import Options.Applicative
 import System.Exit (die)
@@ -70,14 +70,10 @@ instance IsCommand Commands where
 
 --------------------------------------------------------------------------------
 newtype Boot a = Boot
-  { runBoot :: ExceptT ShellError (ReaderT Crypto IO) a }
-  deriving ( Functor, Applicative, Monad, MonadIO
-           , MonadError ShellError
-           , MonadReader Crypto
+  { runBoot :: ExceptT ShellError IO a }
+  deriving ( Functor, Applicative, Monad
+           , MonadIO, MonadError ShellError
            )
-
-instance MonadCrypto Boot where
-  liftCrypto = runCrypto
 
 --------------------------------------------------------------------------------
 -- | Main entry point.
@@ -89,15 +85,18 @@ run = do
   -- Option parsing and processing:
   options <- enableImplicitOptions <$> parse
 
-  -- Init the crypto library.
-  -- FIXME: We need a way to make the block cipher selectable at run time.
-  crypto <- initCrypto
+  -- Generate the initialization commands:
+  (cfg, initcmd) <- runExceptT (runBoot $ boot options) >>= checkOrDie
 
-  (cfg, initcmd, sec) <-
-    usingReaderT crypto (runExceptT (runBoot $ boot options)) >>=
-    checkOrDie
+  -- Initialize the cryptography library:
+  keyManager <- fileManager (cfg ^. secrets_path)
+  crypto <- initCryptoniteT keyManager
 
-  -- Init the database.
+  -- Initialize the encryption keys:
+  sec <- runExceptT (runCryptoniteT' crypto
+           (initCrypto options cfg keyManager)) >>= checkOrDie
+
+  -- Initialize the database.
   db <- DB.initDatabase (cfg ^. database) Nothing
 
   let partialEnv eremote =
@@ -119,11 +118,10 @@ run = do
     checkOrDie (Right a) = pure a
     checkOrDie (Left e)  = die (show e)
 
-    boot :: Options Commands -> Boot (Config, Command (), Secrets)
+    boot :: Options Commands -> Boot (Config, Command ())
     boot options = do
       (cfg, cmd) <- runInit options
-      sec <- loadSecretsFile $ fromMaybe "/dev/null" (cfg ^. secrets_path)
-      return (cfg, cmd, sec)
+      return (cfg, cmd)
 
     dispatch :: Options Commands -> PartialEnv -> (IO (), Maybe (Command ()))
     dispatch options penv =

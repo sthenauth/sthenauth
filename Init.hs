@@ -19,25 +19,26 @@ Special command that can bootstrap sthenauth from nothing.
 module Sthenauth.Shell.Init
   ( runInit
   , initInteractive
+  , initCrypto
   ) where
 
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Data.Time.Clock (getCurrentTime)
+import qualified Data.UUID as UUID
+import Iolaus.Crypto.Monad (KeyManager)
 import qualified Iolaus.Database as DB
 import qualified Opaleye as O
 import System.Console.Byline as Byline
 import System.Directory
 import System.Exit (die)
 import System.FilePath
-import qualified Data.UUID as UUID
 import System.PosixCompat.Files (setFileMode)
 
 --------------------------------------------------------------------------------
 -- Project Imports:
 import qualified Paths_sthenauth as Sthenauth
 import qualified Sthenauth.Core.Admin as Core
-import qualified Sthenauth.Core.AuthN as Core
 import Sthenauth.Lang.Script
 import Sthenauth.Shell.Helpers
 import Sthenauth.Shell.Command
@@ -64,7 +65,6 @@ import Sthenauth.Types
 --
 runInit
   :: ( MonadIO m
-     , MonadCrypto m
      , MonadError e m
      , AsShellError e
      )
@@ -76,7 +76,7 @@ runInit opts = do
 
   (cfg, cmd) <-
     initConfig opts dir >>=
-    initSecrets opts    >>=
+    (return . Options.overrideConfig opts) >>=
     initDatabase opts dir now
 
   pure (cfg, cmd >> migrateDatabase opts dir)
@@ -102,7 +102,7 @@ initInteractive opts penv = go >>= \case
       let mkLogin = toLogin . getEmail <$> maybeAskEmail (Options.email opts)
       login <- whenNothingM mkLogin (throwing _RuntimeError "invalid email address")
       ps <- snd <$> maybeAskNewPassword (Options.password opts)
-      ph <- Core.hashAsPassword ps
+      ph <- toHashedPassword ps
 
       la <- toLocalAccount (Site.pk site) login ph
 
@@ -116,6 +116,27 @@ initInteractive opts penv = go >>= \case
         Just admin -> liftIO $
           putTextLn $ "New account ID: " <>
                       UUID.toText (getKey $ Admin.account_id admin)
+
+--------------------------------------------------------------------------------
+initCrypto
+  :: ( MonadIO m
+     , MonadCrypto k m
+     , MonadError  e m
+     , AsShellError e
+     , AsError e
+     )
+  => Options a
+  -> Config
+  -> KeyManager
+  -> m (Secrets k)
+initCrypto options cfg mgr = do
+  secretsExists <- liftIO (doesPathExist (cfg ^. secrets_path))
+
+  when (not secretsExists && not (Options.init options)) $
+    throwing _MissingSecretsDir (cfg ^. secrets_path)
+
+  liftIO (createDirectoryIfMissing True (cfg ^. secrets_path))
+  initSecrets (cfg ^. symmetric_key_labels) (cfg ^. system_salt_labels) mgr
 
 --------------------------------------------------------------------------------
 -- | Create a configuration file if it doesn't exist, then load it.
@@ -166,39 +187,6 @@ initConfig options dataDir = do
         (newConfig src) (const (loadConfig src))
 
 --------------------------------------------------------------------------------
--- | Create a new keys file if one doesn't already exist.
-initSecrets
-  :: forall e m a.
-  ( MonadIO m
-  , MonadCrypto m
-  , MonadError e m
-  , AsShellError e
-  )
-  => Options a
-  -> Config
-  -> m Config
-initSecrets options cfg = do
-  let src  = Options.secrets options <|> cfg ^. secrets_path
-      def  = Options.private options </> "secrets.json"
-      path = fromMaybe def src
-
-  exists <- shellIO (doesFileExist path)
-
-  if | exists -> done path
-     | Options.init options -> go path >> done path
-     | otherwise -> throwing _MissingSecretsFile path
-
-  where
-    go :: FilePath -> m ()
-    go file = do
-      shellIO (createDirectoryIfMissing True (takeDirectory file))
-      s <- generateSecrets
-      saveSecretsFile file s
-
-    done :: FilePath -> m Config
-    done path = pure (cfg & secrets_path ?~ path)
-
---------------------------------------------------------------------------------
 -- | Initialize the database.
 --
 -- Extract the database configuration from the given 'Config' value
@@ -230,8 +218,6 @@ initDatabase opts dataDir now cfg = do
 
     siteQuery :: Command ()
     siteQuery = do
-      sec  <- view secrets
-
       let site = Site { pk = mempty
                       , created_at = mempty
                       , updated_at = mempty
@@ -241,7 +227,7 @@ initDatabase opts dataDir now cfg = do
                       , policy = defaultPolicy
                       }
       whenNothingM_ Site.selectDefaultSite
-        (void $ Core.createSite now sec site)
+        (void $ Core.createSite now site)
 
 
 --------------------------------------------------------------------------------

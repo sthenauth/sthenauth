@@ -29,7 +29,7 @@ module Sthenauth.Shell.Command
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Data.Time.Clock (getCurrentTime)
-import qualified Iolaus.Crypto as Crypto
+import Iolaus.Crypto.Cryptonite (Cryptonite)
 import qualified Iolaus.Database as DB
 
 --------------------------------------------------------------------------------
@@ -54,7 +54,8 @@ newtype Command a = Command { unC :: Script a }
            , MonadSthenauth
            , MonadByline
            , DB.MonadDB
-           , Crypto.MonadCrypto
+           , MonadCrypto Cryptonite
+           , MonadRandom
            )
 
 --------------------------------------------------------------------------------
@@ -103,7 +104,7 @@ runBootCommand
   -> m (Either ShellError a)
 runBootCommand opts penv cmd = do
     e <- penv <$> liftIO mkRemote
-    first SystemError . fst <$> runScript e (unC cmd)
+    bimap SystemError fst <$> runScript e (unC cmd)
 
   where
     mkRemote :: IO Remote

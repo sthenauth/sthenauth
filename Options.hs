@@ -17,6 +17,7 @@ License: Apache-2.0
 module Sthenauth.Shell.Options
   ( IsCommand(..)
   , Options(..)
+  , overrideConfig
   , parse
   ) where
 
@@ -24,12 +25,14 @@ module Sthenauth.Shell.Options
 -- Library Imports:
 import qualified Data.List as List
 import Data.Version (showVersion)
+import Iolaus.Database (connectionString)
 import Options.Applicative
 import System.Environment (getEnvironment)
 
 --------------------------------------------------------------------------------
 -- Project Imports:
 import qualified Paths_sthenauth as Sthenauth
+import Sthenauth.Types.Config
 
 --------------------------------------------------------------------------------
 -- | Class for types that can act as a command.
@@ -43,7 +46,6 @@ data Options a = Options
   , init     :: Bool
   , migrate  :: Bool
   , config   :: FilePath
-  , private  :: FilePath
   , dbconn   :: Maybe String
   , secrets  :: Maybe FilePath
   , site     :: Maybe Text
@@ -61,9 +63,8 @@ parser env =
           <*> optInit "INIT"
           <*> optMigrate "MIGRATE"
           <*> optConfig "CONFIG"
-          <*> optPrivate "PRIVATE_DIR"
           <*> ((Just <$> optDbconn "DB") <|> pure Nothing)
-          <*> ((Just <$> optSecrets "SECRETS_PATH") <|> pure Nothing)
+          <*> ((Just <$> optSecrets "SECRETS_DIR") <|> pure Nothing)
           <*> optSite
           <*> optSession
           <*> optional (option str (long "email"    <> hidden))
@@ -101,15 +102,6 @@ parser env =
               , help ("Specify the configuration file to use" <> also key)
               ]
 
-    optPrivate :: String -> Parser FilePath
-    optPrivate key = (tryEnv key <|>) $ strOption $
-      mconcat [ short 'p'
-              , long "private"
-              , metavar "DIR"
-              , value "/var/lib/sthenauth"
-              , help ("Use DIR to store private/secret files" <> also key)
-              ]
-
     optDbconn :: String -> Parser String
     optDbconn key = (tryEnv key <|>) $ strOption $
       mconcat [ long "db"
@@ -120,8 +112,8 @@ parser env =
     optSecrets :: String -> Parser String
     optSecrets key = (tryEnv key <|>) $ strOption $
       mconcat [ long "secrets"
-              , metavar "PATH"
-              , help ("Load the encryption keys from PATH" <> also key)
+              , metavar "DIR"
+              , help ("Load the encryption keys from DIR" <> also key)
               ]
 
     optSession :: Parser (Maybe Text)
@@ -149,6 +141,19 @@ parser env =
 
     also :: String -> String
     also key = " (also " <> envPrefix <> key <> ")"
+
+--------------------------------------------------------------------------------
+-- | Override configuration options from command line or environment.
+overrideConfig :: Options a -> Config -> Config
+overrideConfig Options{secrets, dbconn} =
+  (secrets_path .~ fromMaybe (defaultConfig ^. secrets_path) secrets) .
+  over database setConnStr
+
+  where
+    setConnStr c =
+      case dbconn of
+        Nothing -> c
+        Just s  -> c {connectionString = toText s}
 
 --------------------------------------------------------------------------------
 -- | Execute a command line parser and return the resulting options.

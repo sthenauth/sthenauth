@@ -36,18 +36,18 @@ import Sthenauth.Types
 
 --------------------------------------------------------------------------------
 authenticate
-  :: forall m s r e a .
+  :: forall m s r k e a .
      ( MonadIO m
      , MonadByline m
      , MonadSthenauth m
      , MonadDB m
-     , MonadCrypto m
+     , MonadCrypto k m
      , MonadError e m
      , AsError e
      , MonadState s m
      , HasCurrentUser s
      , MonadReader r m
-     , HasSecrets r
+     , HasSecrets r k
      , MaybeHasSite r
      , HasRemote r
      )

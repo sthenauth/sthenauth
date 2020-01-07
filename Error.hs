@@ -27,7 +27,7 @@ module Sthenauth.Shell.Error
 import Control.Exception (SomeException)
 import Control.Lens.TH (makeClassyPrisms)
 import Iolaus.Database (AsDBError(_DBError))
-import qualified Iolaus.Crypto.Error as Crypto
+import qualified Iolaus.Crypto as Crypto
 import qualified Text.Show
 import Sthenauth.Types.Error (Error, AsError(..), AsUserError(_UserError))
 
@@ -36,7 +36,7 @@ import Sthenauth.Types.Error (Error, AsError(..), AsUserError(_UserError))
 data ShellError
   = MissingConfig FilePath
   | MissingDefaultConfig FilePath FilePath
-  | MissingSecretsFile FilePath
+  | MissingSecretsDir FilePath
   | ShellException SomeException
   | InputError Text
   | SystemError Error
@@ -73,9 +73,9 @@ instance Show ShellError where
               , src
               ]
 
-    MissingSecretsFile path ->
-      mconcat [ "missing encryption keys (secrets) file "
-              , "and --init not given, expected to find key at: "
+    MissingSecretsDir path ->
+      mconcat [ "missing encryption keys (secrets) dir "
+              , "and --init not given, expected to find keys in: "
               , path
               ]
 

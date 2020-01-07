@@ -123,7 +123,7 @@ maybeAskPassword mt =
 askNewPassword
   :: ( MonadIO m
      , MonadByline m
-     , MonadCrypto m
+     , MonadCrypto k m
      , MonadError e m
      , AsUserError e
      , MonadReader r m
@@ -141,7 +141,7 @@ askNewPassword = go
 
     new = do
       p <- liftByline $ askPassword "New Password: " Nothing
-      checkPasswordStrength (Crypto.password p) >>= \case
+      checkPasswordStrength (Crypto.toPassword p) >>= \case
         Left _  -> liftByline (sayLn ("Weak password!" <> fg red)) >> new
         Right s -> return (p, s)
 
@@ -151,7 +151,7 @@ askNewPassword = go
 maybeAskNewPassword
   :: ( MonadIO m
      , MonadByline m
-     , MonadCrypto m
+     , MonadCrypto k m
      , MonadError e m
      , AsError e
      , AsUserError e
@@ -163,7 +163,7 @@ maybeAskNewPassword
 maybeAskNewPassword = \case
   Nothing -> askNewPassword
   Just t  ->
-    checkPasswordStrength (Crypto.password t) >>= \case
+    checkPasswordStrength (Crypto.toPassword t) >>= \case
       Left e  -> throwing _RuntimeError e
       Right s -> return (t, s)
 
@@ -171,7 +171,7 @@ maybeAskNewPassword = \case
 -- | Verify the strength of a password.
 checkPasswordStrength
   :: ( MonadIO m
-     , MonadCrypto m
+     , MonadCrypto k m
      , MonadError e m
      , AsUserError e
      , MonadReader r m
