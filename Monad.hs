@@ -40,11 +40,9 @@ runRequest
   -> Logger
   -> Sthenauth a
   -> Handler a
-runRequest e client l s = do
-  (result, store') <- liftIO (runScript (e (fst client)) enter)
-
-  case result of
-    Right a  -> leave a store'
+runRequest e client l s =
+  liftIO (runScript (e (fst client)) enter) >>= \case
+    Right (a, store') -> leave a store'
     Left  e' -> do
       liftIO (logger_error l (fst client) (show e' :: Text))
       throwError (toServerError e')
