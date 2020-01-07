@@ -18,8 +18,7 @@ License: Apache-2.0
 -}
 module Sthenauth.Core.AuthN
   ( asStrongPassword
-  , hashAsPassword
-  , verifyPassword
+  , verifyAndUpgradePassword
   , doesAccountExist
   , getAccountFromLogin
   , accountByLogin
@@ -30,7 +29,7 @@ module Sthenauth.Core.AuthN
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Data.Time.Clock (utctDay)
-import Iolaus.Crypto
+import qualified Iolaus.Crypto as Crypto
 import Iolaus.Database
 import Opaleye ((.==))
 import qualified Opaleye as O
@@ -50,8 +49,8 @@ import Sthenauth.Types
 --------------------------------------------------------------------------------
 -- Verify that the given password text is strong enough to be hashed.
 asStrongPassword
-  :: ( MonadCrypto m
-     , MonadError e m
+  :: ( MonadCrypto k m
+     , MonadError  e m
      , MonadReader r m
      , HasConfig r
      , AsUserError e
@@ -61,62 +60,46 @@ asStrongPassword
   -> m (Password Strong)
 asStrongPassword time input = do
   zc <- views config zxcvbnConfig
-  p  <- strengthM zc (utctDay time) input
+  let p = Crypto.toStrongPassword zc (utctDay time) input
   either (throwing _WeakPasswordError) pure p
   -- FIXME: validate the length of the password after it is
   -- normalized.
 
 --------------------------------------------------------------------------------
--- | Verify and has the given password.
-hashAsPassword
-  :: ( MonadCrypto m
-     , MonadReader r m
-     , HasSecrets r
-     )
-  => Password Strong
-  -> m (Password Hashed)
-hashAsPassword input = do
-  salt <- view (secrets.systemSalt)
-  hash salt input
-
---------------------------------------------------------------------------------
 -- | Returns 'True' if the given password matches the account.
 -- Automatically upgrades the password if necessary.  May throw an
 -- error directing the user to change their password.
-verifyPassword
-  :: ( MonadCrypto m
+verifyAndUpgradePassword
+  :: ( MonadCrypto k m
      , MonadDB m
      , MonadError e m
      , AsUserError e
      , MonadReader r m
      , HasConfig r
-     , HasSecrets r
+     , HasSecrets r k
      , HasRemote r
      )
   => Password Clear
   -> Account Id
   -> m Bool
-verifyPassword p a =
+verifyAndUpgradePassword p a =
   case Account.password a of
     Nothing -> return False
-    Just p' -> do
-      salt <- view (secrets.systemSalt)
-      verify salt p p' >>= \case
-        Mismatch     -> return False
-        Match        -> return True
-        NeedsUpgrade -> upgradePassword p (Account.pk a) >>
-                        return True
+    Just p' -> verifyPassword p p' >>= \case
+      PasswordMismatch     -> return False
+      PasswordsMatch       -> return True
+      PasswordNeedsUpgrade -> upgradePassword p (Account.pk a) $> True
 
 --------------------------------------------------------------------------------
 -- | Upgrade a password.
 upgradePassword
-  :: ( MonadCrypto m
+  :: ( MonadCrypto k m
      , MonadDB m
      , MonadError e m
      , AsUserError e
      , MonadReader r m
      , HasConfig r
-     , HasSecrets r
+     , HasSecrets r k
      , HasRemote r
      )
   => Password Clear
@@ -124,11 +107,11 @@ upgradePassword
   -> m ()
 upgradePassword pw aid = do
   time <- view (remote.request_time)
-  salt <- view (secrets.systemSalt)
   zc <- views config zxcvbnConfig
-  ps <- strengthM zc (utctDay time) pw
+
+  let ps = Crypto.toStrongPassword zc (utctDay time) pw
   ps' <- either (const $ throwing _MustChangePasswordError ()) pure ps
-  ph <- hash salt ps'
+  ph <- toHashedPassword ps'
 
   void $ liftQuery $ update $ O.Update
     { O.uTable = Account.accounts
@@ -141,9 +124,9 @@ upgradePassword pw aid = do
 -- FIXME: use selectFold or maybe just select the ID column.
 doesAccountExist
   :: ( MonadDB m
-     , MonadCrypto m
+     , MonadCrypto k m
      , MonadReader r m
-     , HasSecrets r
+     , HasSecrets  r k
      )
   => SiteId
   -> Login
@@ -158,9 +141,9 @@ doesAccountExist sid l = do
 --------------------------------------------------------------------------------
 getAccountFromLogin
   :: ( MonadDB m
-     , MonadCrypto m
+     , MonadCrypto k m
      , MonadReader r m
-     , HasSecrets r
+     , HasSecrets  r k
      )
   => SiteId
   -> Login
@@ -171,19 +154,17 @@ getAccountFromLogin sid l = do
 
 --------------------------------------------------------------------------------
 accountByLogin
-  :: ( MonadCrypto m
+  :: ( MonadCrypto k m
      , MonadReader r m
-     , HasSecrets r
+     , HasSecrets  r k
      )
   => SiteId
   -> Login
   -> m (O.Query (Account View))
-accountByLogin sid l = do
-  salt <- view (secrets.systemSalt)
-
+accountByLogin sid l =
   case getLogin l of
     Left  u -> pure $ query (Account.findAccountByUsername u)
-    Right e -> query . Email.findAccountByEmail <$> saltedHash salt (getEmail e)
+    Right e -> query . Email.findAccountByEmail <$> toSaltedHash (getEmail e)
 
   where
     -- Restrict the accounts table then run a sub-query.
@@ -199,13 +180,13 @@ accountByLogin sid l = do
 -- Issue a brand new session to the given account.
 issueSession
   :: ( MonadDB m
-     , MonadCrypto m
-     , MonadError e m
-     , AsError e
+     , MonadCrypto k m
+     , MonadError  e m
      , MonadReader r m
+     , HasSecrets  r k
+     , AsError e
      , HasConfig r
      , HasRemote r
-     , HasSecrets r
      )
   => Site Id
   -> Account Id
@@ -228,11 +209,11 @@ issueSession s a = do
 -- | Resume an existing session (sets the 'currentUser' state field.)
 resumeSession
   :: ( MonadDB m
-     , MonadCrypto m
+     , MonadCrypto k m
      , MonadReader r m
      , MaybeHasSite r
      , HasRemote r
-     , HasSecrets r
+     , HasSecrets r k
      , MonadState s m
      , HasCurrentUser s
      )

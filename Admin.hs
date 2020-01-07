@@ -24,7 +24,6 @@ module Sthenauth.Core.Admin
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Control.Arrow (returnA)
-import Iolaus.Crypto (encrypt)
 import Iolaus.Database
 import Iolaus.Validation (runValidationEither)
 import Opaleye (Insert(..), rReturning, rCount, (.==), (.||))
@@ -61,25 +60,26 @@ insertSite site def keyf = transaction $ do
 --------------------------------------------------------------------------------
 -- | Validate a new site, then insert it into the database.
 createSite
-  :: ( MonadCrypto m
-     , MonadDB m
-     , MonadError e m
+  :: ( MonadDB m
+     , MonadCrypto k m
+     , MonadError  e m
+     , MonadReader r m
+     , HasSecrets  r k
+     , MonadRandom   m
      , AsError e
      , AsUserError e
      )
    => UTCTime
-   -> Secrets
    -> Site UI
    -> m SiteId
-createSite time sec s = do
+createSite time s = do
   site <- runValidationEither checkSite s >>=
             either (throwing _ValidationError) pure
 
   let expireIn = addSeconds (defaultPolicy ^. jwk_expires_in) time
-      cryptoKey = sec ^. symmetricKey
 
   (jwk, keyid) <- newJWK Sig
-  ejwk <- encrypt cryptoKey jwk
+  ejwk <- encrypt jwk
 
   let key sid = SiteKey.Key
         { pk = Nothing

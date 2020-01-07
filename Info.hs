@@ -25,7 +25,6 @@ module Sthenauth.Core.Info
 -- Library Imports:
 import qualified Crypto.JOSE.JWK as JOSE
 import qualified Iolaus.Database as DB
-import qualified Iolaus.Crypto as Crypto
 import qualified Opaleye as O
 
 --------------------------------------------------------------------------------
@@ -40,24 +39,22 @@ import Sthenauth.Types.Secrets as Secrets
 -- | Fetch all active public keys for the given site and wrap them
 -- into a key set.
 getSitePrivateKeys
-  :: forall m r.
+  :: forall m k r.
      ( MonadDB m
-     , MonadCrypto m
+     , MonadCrypto k m
      , MonadReader r m
-     , HasSecrets r
+     , HasSecrets  r k
      )
   => SiteId
   -> m JOSE.JWKSet
 getSitePrivateKeys sid = do
-    skey <- view (secrets.symmetricKey)
-    jwks <- DB.liftQuery (DB.select query) >>= mapM (prepKey skey)
+    jwks <- DB.liftQuery (DB.select query) >>= mapM prepKey
     pure (JOSE.JWKSet $ catMaybes jwks)
 
   where
     query :: O.Select (SiteKey.Key View)
     query = proc () -> SiteKey.findActiveKeys -< sid
 
-    prepKey :: Secrets.Key -> SiteKey.Key Id -> m (Maybe JOSE.JWK)
-    prepKey skey k =
-      (^. JOSE.asPublicKey) . getJWK <$>
-        Crypto.decrypt skey (SiteKey.key_data k)
+    prepKey :: SiteKey.Key Id -> m (Maybe JOSE.JWK)
+    prepKey k = (^. JOSE.asPublicKey) . getJWK <$>
+      decrypt (SiteKey.key_data k)
