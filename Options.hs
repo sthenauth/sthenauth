@@ -63,8 +63,8 @@ parser env =
           <*> optInit "INIT"
           <*> optMigrate "MIGRATE"
           <*> optConfig "CONFIG"
-          <*> ((Just <$> optDbconn "DB") <|> pure Nothing)
-          <*> ((Just <$> optSecrets "SECRETS_DIR") <|> pure Nothing)
+          <*> optional (optDbconn "DB")
+          <*> optional (optSecrets "SECRETS_DIR")
           <*> optSite
           <*> optSession
           <*> optional (option str (long "email"    <> hidden))
@@ -98,7 +98,7 @@ parser env =
       mconcat [ short 'c'
               , long "config"
               , metavar "FILE"
-              , value "/var/lib/sthenauth/config.dhall"
+              , value (baseDirectory </> "config.yml")
               , help ("Specify the configuration file to use" <> also key)
               ]
 
