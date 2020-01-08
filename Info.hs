@@ -32,6 +32,7 @@ import qualified Opaleye as O
 import Sthenauth.Tables.Site as Site
 import Sthenauth.Tables.Site.Key as SiteKey
 import Sthenauth.Tables.Util (Id, View)
+import Sthenauth.Types.Error
 import Sthenauth.Types.JWK (getJWK)
 import Sthenauth.Types.Secrets as Secrets
 
@@ -39,9 +40,11 @@ import Sthenauth.Types.Secrets as Secrets
 -- | Fetch all active public keys for the given site and wrap them
 -- into a key set.
 getSitePrivateKeys
-  :: forall m k r.
+  :: forall m k e r.
      ( MonadDB m
      , MonadCrypto k m
+     , MonadError  e m
+     , AsError     e
      , MonadReader r m
      , HasSecrets  r k
      )
