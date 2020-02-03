@@ -50,9 +50,9 @@ runRequest e client l s =
   where
     -- Prepare and then execute the request.
     enter :: Script a
-    enter = withSite (Just (fst client ^. request_fqdn)) $ do
-      sid <- whenNothingM (Site.pk <<$>> view env_site) (throwing _MissingSiteError ())
-      whenJust (snd client) (currentUserFromSessionKey sid >=> assign store_user)
+    enter = withSite (Just (fst client ^. requestFqdn)) $ do
+      sid <- whenNothingM (Site.pk <<$>> view envSite) (throwing _MissingSiteError ())
+      whenJust (snd client) (currentUserFromSessionKey sid >=> assign storeUser)
       liftSthenauth s
 
     -- Actions to run after the request is done.

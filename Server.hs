@@ -1,5 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
-
 {-|
 
 Copyright:
@@ -28,7 +26,6 @@ import qualified Network.Wai.Handler.Warp as Warp
 import Servant.API
 import Servant.Server
 import Servant.Server.StaticFiles (serveDirectoryFileServer)
-import System.FilePath
 
 --------------------------------------------------------------------------------
 -- Project Imports:

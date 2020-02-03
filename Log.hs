@@ -1,5 +1,3 @@
-{-# LANGUAGE RankNTypes #-}
-
 {-|
 
 Copyright:
@@ -68,17 +66,17 @@ withLogger getRemote f = bracket open snd (go . fst)
     formatRemote Nothing  others = "[] - - - " <> others <> " - \n"
     formatRemote (Just r) others = mconcat
       [ " ["
-      , toLogStr (formatTime defaultTimeLocale timeFormat (r ^. request_time))
+      , toLogStr (formatTime defaultTimeLocale timeFormat (r ^. requestTime))
       , "] "
-      , toLogStr (UUID.toASCIIBytes (r ^. request_id))
+      , toLogStr (UUID.toASCIIBytes (r ^. requestId))
       , " "
       , toLogStr (encodeAddress (r ^. address))
       , " "
-      , toLogStr (r ^. request_fqdn)
+      , toLogStr (r ^. requestFqdn)
       , " "
       , others
       , " "
-      , toLogStr (r ^. user_agent)
+      , toLogStr (r ^. userAgent)
       , "\n"
       ]
 
