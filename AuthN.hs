@@ -28,22 +28,21 @@ module Sthenauth.Core.AuthN
 
 --------------------------------------------------------------------------------
 -- Library Imports:
+import Control.Monad.Database.Class
 import Data.Time.Clock (utctDay)
-import qualified Iolaus.Crypto as Crypto
-import Iolaus.Database
-import Opaleye ((.==))
+import qualified Iolaus.Crypto.Password as Crypto
+import Iolaus.Database.Query
 import qualified Opaleye as O
 
 --------------------------------------------------------------------------------
 -- Project Imports:
-import Sthenauth.Tables.Account (Account, AccountId)
+import Sthenauth.Tables.Account (Account, AccountF, AccountId)
 import qualified Sthenauth.Tables.Account as Account
 import qualified Sthenauth.Tables.Email as Email
 import Sthenauth.Tables.Session (Session, ClearSessionKey)
 import qualified Sthenauth.Tables.Session as Session
 import Sthenauth.Tables.Site (Site, SiteId)
 import Sthenauth.Tables.Site as Site
-import Sthenauth.Tables.Util
 import Sthenauth.Types
 
 --------------------------------------------------------------------------------
@@ -71,16 +70,17 @@ asStrongPassword time input = do
 -- error directing the user to change their password.
 verifyAndUpgradePassword
   :: ( MonadCrypto k m
-     , MonadDB m
+     , MonadDatabase m
      , MonadError e m
      , AsUserError e
+     , AsDbError   e
      , MonadReader r m
      , HasConfig r
      , HasSecrets r k
      , HasRemote r
      )
   => Password Clear
-  -> Account Id
+  -> Account
   -> m Bool
 verifyAndUpgradePassword p a =
   case Account.password a of
@@ -94,8 +94,9 @@ verifyAndUpgradePassword p a =
 -- | Upgrade a password.
 upgradePassword
   :: ( MonadCrypto k m
-     , MonadDB m
+     , MonadDatabase m
      , MonadError e m
+     , AsDbError  e
      , AsUserError e
      , MonadReader r m
      , HasConfig r
@@ -106,14 +107,14 @@ upgradePassword
   -> AccountId
   -> m ()
 upgradePassword pw aid = do
-  time <- view (remote.request_time)
+  time <- view (remote.requestTime)
   zc <- views config zxcvbnConfig
 
   let ps = Crypto.toStrongPassword zc (utctDay time) pw
   ps' <- either (const $ throwing _MustChangePasswordError ()) pure ps
   ph <- toHashedPassword ps'
 
-  void $ liftQuery $ update $ O.Update
+  void . transaction . update $ O.Update
     { O.uTable = Account.accounts
     , uUpdateWith = O.updateEasy (\a -> a {Account.password = O.toNullable (O.toFields ph)})
     , uWhere = \a -> Account.pk a .== O.toFields aid
@@ -123,8 +124,10 @@ upgradePassword pw aid = do
 --------------------------------------------------------------------------------
 -- FIXME: use selectFold or maybe just select the ID column.
 doesAccountExist
-  :: ( MonadDB m
+  :: ( MonadDatabase m
      , MonadCrypto k m
+     , MonadError  e m
+     , AsDbError   e
      , MonadReader r m
      , HasSecrets  r k
      )
@@ -133,24 +136,23 @@ doesAccountExist
   -> m Bool
 doesAccountExist sid l = do
   query <- accountByLogin sid l
-
-  liftQuery $ do
-    n <- listToMaybe <$> select (O.countRows $ O.limit 1 query)
-    pure (fromMaybe 0 n /= (0 :: Int64))
+  runQuery (count query <&> (/= 0))
 
 --------------------------------------------------------------------------------
 getAccountFromLogin
-  :: ( MonadDB m
+  :: ( MonadDatabase m
      , MonadCrypto k m
+     , MonadError  e m
+     , AsDbError   e
      , MonadReader r m
      , HasSecrets  r k
      )
   => SiteId
   -> Login
-  -> m (Maybe (Account Id))
+  -> m (Maybe Account)
 getAccountFromLogin sid l = do
   query <- accountByLogin sid l
-  listToMaybe <$> liftQuery (select $ O.limit 1 query)
+  runQuery (select1 query)
 
 --------------------------------------------------------------------------------
 accountByLogin
@@ -160,7 +162,7 @@ accountByLogin
      )
   => SiteId
   -> Login
-  -> m (O.Query (Account View))
+  -> m (O.Query (AccountF SqlRead))
 accountByLogin sid l =
   case getLogin l of
     Left  u -> pure $ query (Account.findAccountByUsername u)
@@ -169,28 +171,29 @@ accountByLogin sid l =
   where
     -- Restrict the accounts table then run a sub-query.
     query
-      :: O.SelectArr (Account View) (Account View)
-      -> O.Select (Account View)
+      :: O.SelectArr (AccountF SqlRead) (AccountF SqlRead)
+      -> O.Select (AccountF SqlRead)
     query sub = proc () -> do
       t1 <- O.selectTable Account.accounts -< ()
-      O.restrict -< Account.site_id t1 .== O.toFields sid
+      O.restrict -< Account.siteId t1 .== O.toFields sid
       sub -< t1
 
 --------------------------------------------------------------------------------
 -- Issue a brand new session to the given account.
 issueSession
-  :: ( MonadDB m
+  :: ( MonadDatabase m
      , MonadCrypto k m
      , MonadError  e m
      , MonadReader r m
      , HasSecrets  r k
-     , AsError e
+     , AsDbError   e
+     , AsSystemError e
      , HasConfig r
      , HasRemote r
      )
-  => Site Id
-  -> Account Id
-  -> m (Session Id, ClearSessionKey, PostLogin)
+  => Site
+  -> Account
+  -> m (Session, ClearSessionKey, PostLogin)
 issueSession s a = do
   r <- view remote
   c <- view config
@@ -198,7 +201,7 @@ issueSession s a = do
   (clear, key) <- Session.newSessionKey
 
   let sessionW = Session.newSession (Account.pk a) r (Site.policy s) key
-      query = Session.insertSession (c ^. max_sessions_per_account) sessionW
+      query = Session.insertSession (c ^. maxSessionsPerAccount) sessionW
       plogin = Site.postLogin s
 
   transaction query >>= \case
@@ -208,9 +211,11 @@ issueSession s a = do
 --------------------------------------------------------------------------------
 -- | Resume an existing session (sets the 'currentUser' state field.)
 resumeSession
-  :: ( MonadDB m
+  :: ( MonadDatabase m
      , MonadCrypto k m
+     , MonadError  e m
      , MonadReader r m
+     , AsDbError   e
      , MaybeHasSite r
      , HasRemote r
      , HasSecrets r k

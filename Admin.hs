@@ -24,28 +24,31 @@ module Sthenauth.Core.Admin
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Control.Arrow (returnA)
-import Iolaus.Database
-import Iolaus.Validation (runValidationEither)
-import Opaleye (Insert(..), rReturning, rCount, (.==), (.||))
-import qualified Opaleye as O
+import Control.Monad.Database.Class
 import qualified Data.UUID as UUID
-import Opaleye.ToFields (toFields)
+import Iolaus.Database.Extra (lowerEq)
+import Iolaus.Database.Query
+import Iolaus.Validation (runValidationEither)
+import qualified Opaleye as O
+import Opaleye.SqlTypes
 
 --------------------------------------------------------------------------------
 -- Project Imports:
 import Sthenauth.Tables.Site as Site
 import Sthenauth.Tables.Site.Alias as SiteAlias
 import Sthenauth.Tables.Site.Key as SiteKey
-import Sthenauth.Tables.Util
 import Sthenauth.Types
 
 --------------------------------------------------------------------------------
 -- | Try to insert a new site into the database.
 insertSite
-  :: (MonadDB m)
-  => Site Write
+  :: ( MonadDatabase m
+     , MonadError  e m
+     , AsDbError   e
+     )
+  => SiteF SqlWrite
   -> Bool -- ^ Is the new site the default site?
-  -> (SiteId -> SiteKey.Key Write)
+  -> (SiteId -> SiteKey.KeyF SqlWrite)
   -> m (Maybe SiteId)
 insertSite site def keyf = transaction $ do
     when def Site.resetDefaultSite
@@ -55,60 +58,62 @@ insertSite site def keyf = transaction $ do
 
   where
     inS = Insert sites [site] (rReturning Site.pk) Nothing
-    inK sid = Insert SiteKey.keys [keyf sid] rCount Nothing
+    inK sid = Insert SiteKey.site_keys [keyf sid] rCount Nothing
 
 --------------------------------------------------------------------------------
 -- | Validate a new site, then insert it into the database.
 createSite
-  :: ( MonadDB m
+  :: ( MonadDatabase m
      , MonadCrypto k m
      , MonadError  e m
      , MonadReader r m
      , HasSecrets  r k
      , MonadRandom   m
-     , AsError e
+     , AsSystemError e
      , AsUserError e
+     , AsDbError   e
      )
    => UTCTime
-   -> Site UI
+   -> SiteF ForUI
    -> m SiteId
 createSite time s = do
   site <- runValidationEither checkSite s >>=
             either (throwing _ValidationError) pure
 
-  let expireIn = addSeconds (defaultPolicy ^. jwk_expires_in) time
+  let expireIn = addSeconds (defaultPolicy ^. jwkExpiresIn) time
 
   (jwk, keyid) <- newJWK Sig
   ejwk <- encrypt jwk
 
   let key sid = SiteKey.Key
         { pk = Nothing
-        , created_at = Nothing
-        , updated_at = Nothing
-        , site_id = toFields sid
+        , createdAt = Nothing
+        , updatedAt = Nothing
+        , siteId = toFields sid
         , kid = toFields keyid
-        , key_use = toFields Sig
-        , key_data = toFields ejwk
-        , expires_at = toFields expireIn
+        , keyUse = toFields Sig
+        , keyData = toFields ejwk
+        , expiresAt = toFields expireIn
         }
 
-  insertSite site (fromMaybe False $ is_default s) key >>=
+  insertSite site (fromMaybe False $ isDefault s) key >>=
     maybe (throwing _RuntimeError "failed to insert new site") pure
 
 --------------------------------------------------------------------------------
 -- | Locate the active site.
 siteFromFQDN
-  :: ( MonadDB m
+  :: ( MonadDatabase m
+     , MonadError  e m
+     , AsDbError   e
      )
   => Text
-  -> m (Maybe (Site Id))
+  -> m (Maybe Site)
 siteFromFQDN fqdn =
-  listToMaybe <$> liftQuery
-    (select $ O.orderBy (O.asc is_default) $ O.limit 1 query)
+    runQuery (select1 $ O.orderBy (O.asc isDefault) query)
 
   where
     -- Select sites where...
-    query :: O.Select (Site View)
+    query :: O.Select (SiteF SqlRead)
     query = proc () -> do
       t1 <- O.selectTable sites -< ()
       (_, domain) <- aliasJoin -< t1
@@ -126,18 +131,18 @@ siteFromFQDN fqdn =
                        (`lowerEq` fqdn) domain
 
           -- 4. The site is marked as the default site.
-          defaultMatch = Site.is_default t1
+          defaultMatch = Site.isDefault t1
 
       O.restrict -< (siteMatch .|| uuidMatch .|| aliasMatch .|| defaultMatch)
       returnA -< t1
 
     -- Join the site and site_aliases tables.
-    aliasJoin :: O.SelectArr (Site View) (O.FieldNullable SqlUuid, O.FieldNullable SqlText)
+    aliasJoin :: O.SelectArr (SiteF SqlRead) (O.FieldNullable SqlUuid, O.FieldNullable SqlText)
     aliasJoin = proc t1 -> O.leftJoinA aliasSelect -<
       (\(uuid, _) -> uuid .== Site.pk t1)
 
     -- A subset of the site_aliases table.
     aliasSelect :: O.Select (O.Column SqlUuid, O.Column SqlText)
     aliasSelect = proc () -> do
-      t <- O.selectTable SiteAlias.aliases -< ()
-      returnA -< (SiteAlias.site_id t, SiteAlias.fqdn t)
+      t <- O.selectTable SiteAlias.site_aliases -< ()
+      returnA -< (SiteAlias.siteId t, SiteAlias.fqdn t)

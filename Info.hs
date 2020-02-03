@@ -20,18 +20,17 @@ module Sthenauth.Core.Info
   ( getSitePrivateKeys
   ) where
 
-
 --------------------------------------------------------------------------------
 -- Library Imports:
+import Control.Monad.Database.Class
 import qualified Crypto.JOSE.JWK as JOSE
-import qualified Iolaus.Database as DB
+import Iolaus.Database.Query
 import qualified Opaleye as O
 
 --------------------------------------------------------------------------------
 -- Project Imports:
 import Sthenauth.Tables.Site as Site
 import Sthenauth.Tables.Site.Key as SiteKey
-import Sthenauth.Tables.Util (Id, View)
 import Sthenauth.Types.Error
 import Sthenauth.Types.JWK (getJWK)
 import Sthenauth.Types.Secrets as Secrets
@@ -41,23 +40,24 @@ import Sthenauth.Types.Secrets as Secrets
 -- into a key set.
 getSitePrivateKeys
   :: forall m k e r.
-     ( MonadDB m
+     ( MonadDatabase m
      , MonadCrypto k m
      , MonadError  e m
-     , AsError     e
+     , AsDbError     e
+     , AsCryptoError e
      , MonadReader r m
      , HasSecrets  r k
      )
   => SiteId
   -> m JOSE.JWKSet
 getSitePrivateKeys sid = do
-    jwks <- DB.liftQuery (DB.select query) >>= mapM prepKey
+    jwks <- runQuery (select query) >>= mapM prepKey
     pure (JOSE.JWKSet $ catMaybes jwks)
 
   where
-    query :: O.Select (SiteKey.Key View)
+    query :: O.Select (SiteKey.KeyF SqlRead)
     query = proc () -> SiteKey.findActiveKeys -< sid
 
-    prepKey :: SiteKey.Key Id -> m (Maybe JOSE.JWK)
+    prepKey :: SiteKey.Key -> m (Maybe JOSE.JWK)
     prepKey k = (^. JOSE.asPublicKey) . getJWK <$>
-      decrypt (SiteKey.key_data k)
+      decrypt (SiteKey.keyData k)
