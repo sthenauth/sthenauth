@@ -25,7 +25,7 @@ module Sthenauth.Shell.Options
 -- Library Imports:
 import qualified Data.List as List
 import Data.Version (showVersion)
-import Iolaus.Database (connectionString)
+import Iolaus.Database.Config
 import Options.Applicative
 import System.Environment (getEnvironment)
 
@@ -146,14 +146,14 @@ parser env =
 -- | Override configuration options from command line or environment.
 overrideConfig :: Options a -> Config -> Config
 overrideConfig Options{secrets, dbconn} =
-  (secrets_path .~ fromMaybe (defaultConfig ^. secrets_path) secrets) .
+  (secretsPath .~ fromMaybe (defaultConfig ^. secretsPath) secrets) .
   over database setConnStr
 
   where
     setConnStr c =
       case dbconn of
         Nothing -> c
-        Just s  -> c {connectionString = toText s}
+        Just s  -> c & databaseConnectionString .~ toText s
 
 --------------------------------------------------------------------------------
 -- | Execute a command line parser and return the resulting options.

@@ -1,5 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-
 {-|
 
 Copyright:
@@ -22,8 +20,8 @@ module Sthenauth.Shell.Boot
 
 --------------------------------------------------------------------------------
 -- Library Imports:
-import Iolaus.Crypto.Cryptonite
-import qualified Iolaus.Database as DB
+import Control.Monad.Crypto.Cryptonite
+import qualified Control.Monad.Database as DB
 import Options.Applicative
 import System.Exit (die)
 import System.PosixCompat.Files (setFileCreationMask)
@@ -71,9 +69,10 @@ instance IsCommand Commands where
 --------------------------------------------------------------------------------
 newtype Boot a = Boot
   { runBoot :: ExceptT ShellError IO a }
-  deriving ( Functor, Applicative, Monad
-           , MonadIO, MonadError ShellError
-           )
+  deriving newtype
+    ( Functor, Applicative, Monad
+    , MonadIO, MonadError ShellError
+    )
 
 --------------------------------------------------------------------------------
 -- | Main entry point.
@@ -89,7 +88,7 @@ run = do
   (cfg, initcmd) <- runExceptT (runBoot $ boot options) >>= checkOrDie
 
   -- Initialize the cryptography library:
-  keyManager <- fileManager (cfg ^. secrets_path)
+  keyManager <- fileManager (cfg ^. secretsPath)
   crypto <- initCryptoniteT keyManager
 
   -- Initialize the encryption keys:
@@ -97,15 +96,15 @@ run = do
            (initCrypto options cfg keyManager)) >>= checkOrDie
 
   -- Initialize the database.
-  db <- DB.initDatabase (cfg ^. database) Nothing
+  db <- DB.initRuntime (cfg ^. database) Nothing
 
   let partialEnv eremote =
-        Env { _env_config  = cfg
-            , _env_db      = db
-            , _env_crypto  = crypto
-            , _env_secrets = sec
-            , _env_remote  = eremote
-            , _env_site    = Nothing
+        Env { _envConfig  = cfg
+            , _envDb      = db
+            , _envCrypto  = crypto
+            , _envSecrets = sec
+            , _envRemote  = eremote
+            , _envSite    = Nothing
             }
 
   let (io, cmd) = dispatch options partialEnv

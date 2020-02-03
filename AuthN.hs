@@ -40,10 +40,11 @@ authenticate
      ( MonadIO m
      , MonadByline m
      , MonadSthenauth m
-     , MonadDB m
+     , MonadDatabase m
      , MonadCrypto k m
      , MonadError e m
-     , AsError e
+     , AsSystemError e
+     , AsDbError e
      , MonadState s m
      , HasCurrentUser s
      , MonadReader r m

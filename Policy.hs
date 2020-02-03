@@ -63,4 +63,4 @@ options = Options.hsubparser $ mconcat
 run :: SubCommand -> Command ()
 run sub = liftSthenauth $
   case sub of
-    ChangeAccountCreationTo mode -> modifyPolicy (account_creation .~ mode)
+    ChangeAccountCreationTo mode -> modifyPolicy (accountCreation .~ mode)

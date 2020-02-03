@@ -26,9 +26,9 @@ module Sthenauth.Shell.Helpers
 
 --------------------------------------------------------------------------------
 -- Library Imports:
-import System.Console.Byline as Byline
 import Data.Time.Clock (getCurrentTime)
-import Iolaus.Crypto as Crypto
+import Iolaus.Crypto.Password as Crypto
+import System.Console.Byline as Byline
 
 --------------------------------------------------------------------------------
 -- Project Imports:
@@ -59,7 +59,7 @@ checkOrAsk
   :: forall m e a .
      ( MonadByline m
      , MonadError e m
-     , AsError e
+     , AsSystemError e
      )
   => Maybe Text
   -> Byline IO Text
@@ -87,7 +87,7 @@ maybeAskEmail
   :: ( MonadIO m
      , MonadByline m
      , MonadError e m
-     , AsError e
+     , AsSystemError e
      )
   => Maybe Text
   -> m Email
@@ -111,7 +111,7 @@ emailAction = Byline.ask "Email Address: " Nothing
 maybeAskPassword
   :: ( MonadByline m
      , MonadError e m
-     , AsError e
+     , AsSystemError e
      )
   => Maybe Text
   -> m Text
@@ -153,7 +153,7 @@ maybeAskNewPassword
      , MonadByline m
      , MonadCrypto k m
      , MonadError e m
-     , AsError e
+     , AsSystemError e
      , AsUserError e
      , MonadReader r m
      , HasConfig r

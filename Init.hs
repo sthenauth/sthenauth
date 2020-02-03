@@ -24,11 +24,13 @@ module Sthenauth.Shell.Init
 
 --------------------------------------------------------------------------------
 -- Library Imports:
+import Control.Monad.Crypto.Cryptonite (KeyManager)
+import qualified Control.Monad.Database.Class as DB
 import Data.Time.Clock (getCurrentTime)
 import qualified Data.UUID as UUID
-import Iolaus.Crypto.Monad (KeyManager)
-import qualified Iolaus.Database as DB
-import qualified Opaleye as O
+import Iolaus.Database.Config
+import Iolaus.Database.Query (selectTable, count)
+import Iolaus.Database.Table (getKey)
 import System.Console.Byline as Byline
 import System.Directory
 import System.Exit (die)
@@ -49,7 +51,6 @@ import qualified Sthenauth.Shell.Options as Options
 import Sthenauth.Tables.Admin as Admin
 import Sthenauth.Tables.Site as Site
 import Sthenauth.Tables.Account as Account
-import Sthenauth.Tables.Util (count, getKey)
 import Sthenauth.Types
 
 --------------------------------------------------------------------------------
@@ -90,12 +91,12 @@ initInteractive opts penv = go >>= \case
 
   where
     go = runCommandSansAuth opts penv $ do
-      n <- liftQuery $ count (O.limit 1 $ O.selectTable admins)
+      n <- DB.runQuery (count (selectTable admins))
       when (n == 0) initialAdmin
 
     initialAdmin :: Command ()
     initialAdmin = do
-      site <- whenNothingM (view env_site) (throwing _MissingSiteError ())
+      site <- whenNothingM (view envSite) (throwing _MissingSiteError ())
 
       liftByline (sayLn ("Create the initial administrator account:" <> fg green))
 
@@ -115,7 +116,7 @@ initInteractive opts penv = go >>= \case
         Nothing -> throwing _RuntimeError "failed to create admin account"
         Just admin -> liftIO $
           putTextLn $ "New account ID: " <>
-                      UUID.toText (getKey $ Admin.account_id admin)
+                      UUID.toText (getKey $ Admin.accountId admin)
 
 --------------------------------------------------------------------------------
 initCrypto
@@ -123,20 +124,20 @@ initCrypto
      , MonadCrypto k m
      , MonadError  e m
      , AsShellError e
-     , AsError e
+     , AsSystemError e
      )
   => Options a
   -> Config
   -> KeyManager
   -> m (Secrets k)
 initCrypto options cfg mgr = do
-  secretsExists <- liftIO (doesPathExist (cfg ^. secrets_path))
+  secretsExists <- liftIO (doesPathExist (cfg ^. secretsPath))
 
   when (not secretsExists && not (Options.init options)) $
-    throwing _MissingSecretsDir (cfg ^. secrets_path)
+    throwing _MissingSecretsDir (cfg ^. secretsPath)
 
-  liftIO (createDirectoryIfMissing True (cfg ^. secrets_path))
-  initSecrets (cfg ^. symmetric_key_labels) (cfg ^. system_salt_labels) mgr
+  liftIO (createDirectoryIfMissing True (cfg ^. secretsPath))
+  initSecrets (cfg ^. symmetricKeyLabels) (cfg ^. systemSaltLabels) mgr
 
 --------------------------------------------------------------------------------
 -- | Create a configuration file if it doesn't exist, then load it.
@@ -203,26 +204,25 @@ initDatabase
   -> Config
   -> m (Config, Command ())
 initDatabase opts dataDir now cfg = do
-  let def = cfg ^. database
-      conn = maybe (DB.connectionString def) toText $ Options.dbconn opts
-      cfg' = cfg & database .~ (def { DB.connectionString = conn })
+  let conn = maybe (cfg ^. database.databaseConnectionString) toText $ Options.dbconn opts
+      cfg' = cfg & (database.databaseConnectionString) .~ conn
 
   pure (cfg', go)
 
   where
     go :: Command ()
     go = when (Options.init opts) $ do
-      exists <- DB.initialized
-      unless exists (DB.migrate (dataDir </> "schema") True)
+      exists <- DB.migrationTableExists
+      unless exists (migrateDatabase opts dataDir)
       siteQuery
 
     siteQuery :: Command ()
     siteQuery = do
       let site = Site { pk = mempty
-                      , created_at = mempty
-                      , updated_at = mempty
-                      , is_default = Just True
-                      , after_login_url = Nothing
+                      , createdAt = mempty
+                      , updatedAt = mempty
+                      , isDefault = Just True
+                      , afterLoginUrl = Nothing
                       , fqdn = "localhost"
                       , policy = defaultPolicy
                       }
@@ -237,4 +237,6 @@ migrateDatabase
   -> FilePath
   -> Command ()
 migrateDatabase opts dataDir = when (Options.migrate opts) $
-  DB.migrate (dataDir </> "schema") True
+  DB.migrate (dataDir </> "schema") DB.MigrateVerbosely >>= \case
+    DB.MigrationError e -> throwError (RuntimeError (toText e))
+    DB.MigrationSuccess -> pass

@@ -1,5 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-
 {-|
 
 Copyright:
@@ -28,9 +26,8 @@ module Sthenauth.Shell.Command
 
 --------------------------------------------------------------------------------
 -- Library Imports:
+import Control.Monad.Crypto.Cryptonite (Cryptonite)
 import Data.Time.Clock (getCurrentTime)
-import Iolaus.Crypto.Cryptonite (Cryptonite)
-import qualified Iolaus.Database as DB
 
 --------------------------------------------------------------------------------
 -- Project Imports:
@@ -46,17 +43,18 @@ import Sthenauth.Types
 --------------------------------------------------------------------------------
 -- | A type encapsulating Sthenauth shell commands.
 newtype Command a = Command { unC :: Script a }
-  deriving ( Functor, Applicative, Monad
-           , MonadIO
-           , MonadError  Error
-           , MonadState  Store
-           , MonadReader Env
-           , MonadSthenauth
-           , MonadByline
-           , DB.MonadDB
-           , MonadCrypto Cryptonite
-           , MonadRandom
-           )
+  deriving newtype
+    ( Functor, Applicative, Monad
+    , MonadIO
+    , MonadError  SystemError
+    , MonadState  Store
+    , MonadReader Env
+    , MonadSthenauth
+    , MonadByline
+    , MonadDatabase
+    , MonadCrypto Cryptonite
+    , MonadRandom
+    )
 
 --------------------------------------------------------------------------------
 runCommand
@@ -89,9 +87,9 @@ runCommandSansAuth opts penv cmd =
   where
     go :: Script a
     go = withSite (site opts) $
-      Site.fqdn <<$>> view env_site >>= \case
+      Site.fqdn <<$>> view envSite >>= \case
         Nothing   -> unC cmd
-        Just fqdn -> local ((env_remote.request_fqdn) .~ fqdn) (unC cmd)
+        Just fqdn -> local ((envRemote.requestFqdn) .~ fqdn) (unC cmd)
 
 --------------------------------------------------------------------------------
 -- | Execute a command without any authentication or database access.
@@ -104,7 +102,7 @@ runBootCommand
   -> m (Either ShellError a)
 runBootCommand opts penv cmd = do
     e <- penv <$> liftIO mkRemote
-    bimap SystemError fst <$> runScript e (unC cmd)
+    bimap SError fst <$> runScript e (unC cmd)
 
   where
     mkRemote :: IO Remote
@@ -113,9 +111,9 @@ runBootCommand opts penv cmd = do
       time <- liftIO getCurrentTime
 
       return Remote
-        { _address      = localhost
-        , _user_agent   = "Sthenauth Command Line"
-        , _request_fqdn = fromMaybe "default" (site opts)
-        , _request_id   = rid
-        , _request_time = time
+        { _address     = localhost
+        , _userAgent   = "Sthenauth Command Line"
+        , _requestFqdn = fromMaybe "default" (site opts)
+        , _requestId   = rid
+        , _requestTime = time
         }

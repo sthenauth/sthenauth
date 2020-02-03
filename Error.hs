@@ -1,5 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
-
 {-|
 
 Copyright:
@@ -26,10 +24,10 @@ module Sthenauth.Shell.Error
 -- Library Imports:
 import Control.Exception (SomeException)
 import Control.Lens.TH (makeClassyPrisms)
-import Iolaus.Database (AsDBError(_DBError))
-import qualified Iolaus.Crypto as Crypto
+import Iolaus.Crypto.Error
+import Iolaus.Database.Error
+import Sthenauth.Types.Error
 import qualified Text.Show
-import Sthenauth.Types.Error (Error, AsError(..), AsUserError(_UserError))
 
 --------------------------------------------------------------------------------
 -- | Errors that can occur when running a 'Command'.
@@ -39,21 +37,21 @@ data ShellError
   | MissingSecretsDir FilePath
   | ShellException SomeException
   | InputError Text
-  | SystemError Error
+  | SError SystemError
 
 makeClassyPrisms ''ShellError
 
 --------------------------------------------------------------------------------
-instance AsError ShellError where
-  _Error = _SystemError
+instance AsSystemError ShellError where
+  _SystemError = _SError
 
 instance AsUserError ShellError where
   _UserError = _SystemError . _ApplicationUserError
 
-instance AsDBError ShellError where
-  _DBError = _SystemError ._DatabaseError
+instance AsDbError ShellError where
+  _DbError = _SystemError ._SystemDatabaseError
 
-instance Crypto.AsCryptoError ShellError where
+instance AsCryptoError ShellError where
   _CryptoError = _SystemError . _CryptoError
 
 --------------------------------------------------------------------------------
@@ -89,7 +87,7 @@ instance Show ShellError where
               , toString t
               ]
 
-    SystemError e ->
+    SError e ->
       mconcat [ "a system-level error occurred: "
               , show e
               ]
