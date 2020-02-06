@@ -48,7 +48,7 @@ newtype Command a = Command { unC :: Script a }
     , MonadIO
     , MonadError  SystemError
     , MonadState  Store
-    , MonadReader Env
+    , MonadReader Runtime
     , MonadSthenauth
     , MonadByline
     , MonadDatabase
@@ -61,11 +61,11 @@ runCommand
   :: forall m o a.
      ( MonadIO m )
   => Options o
-  -> PartialEnv
+  -> Env
   -> Command a
   -> m (Either ShellError a)
-runCommand opts penv cmd =
-    runCommandSansAuth opts penv go
+runCommand opts renv cmd =
+    runCommandSansAuth opts renv go
   where
     go :: Command a
     go = do
@@ -79,17 +79,17 @@ runCommandSansAuth
   :: forall m o a.
      ( MonadIO m )
   => Options o
-  -> PartialEnv
+  -> Env
   -> Command a
   -> m (Either ShellError a)
-runCommandSansAuth opts penv cmd =
-    runBootCommand opts penv (Command go)
+runCommandSansAuth opts renv cmd =
+    runBootCommand opts renv (Command go)
   where
     go :: Script a
     go = withSite (site opts) $
       Site.fqdn <<$>> view envSite >>= \case
         Nothing   -> unC cmd
-        Just fqdn -> local ((envRemote.requestFqdn) .~ fqdn) (unC cmd)
+        Just fqdn -> local ((remote.requestFqdn) .~ fqdn) (unC cmd)
 
 --------------------------------------------------------------------------------
 -- | Execute a command without any authentication or database access.
@@ -97,11 +97,11 @@ runBootCommand
   :: forall m o a.
      ( MonadIO m )
   => Options o
-  -> PartialEnv
+  -> Env
   -> Command a
   -> m (Either ShellError a)
-runBootCommand opts penv cmd = do
-    e <- penv <$> liftIO mkRemote
+runBootCommand opts renv cmd = do
+    e <- Runtime renv <$> liftIO mkRemote
     bimap SError fst <$> runScript e (unC cmd)
 
   where

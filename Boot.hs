@@ -28,13 +28,14 @@ import System.PosixCompat.Files (setFileCreationMask)
 
 --------------------------------------------------------------------------------
 -- Project Imports:
+import Sthenauth.Lang.Script
 import Sthenauth.Shell.Command
 import Sthenauth.Shell.Error
 import Sthenauth.Shell.Init
 import Sthenauth.Shell.Options (Options, IsCommand(..), parse)
 import qualified Sthenauth.Shell.Options as Options
 import Sthenauth.Types
-import Sthenauth.Lang.Script
+import Sthenauth.Types.CertAuthT (initCertAuth)
 
 --------------------------------------------------------------------------------
 -- Sub-commands:
@@ -98,18 +99,18 @@ run = do
   -- Initialize the database.
   db <- DB.initRuntime (cfg ^. database) Nothing
 
-  let partialEnv eremote =
-        Env { _envConfig  = cfg
-            , _envDb      = db
-            , _envCrypto  = crypto
-            , _envSecrets = sec
-            , _envRemote  = eremote
-            , _envSite    = Nothing
-            }
+  let renv = Env
+        { _envConfig   = cfg
+        , _envDb       = db
+        , _envCrypto   = crypto
+        , _envSecrets  = sec
+        , _envSite     = Nothing
+        , _envCertAuth = initCertAuth (cfg ^. certAuth) crypto db
+        }
 
-  let (io, cmd) = dispatch options partialEnv
-  runBootCommand options partialEnv initcmd >>= checkOrDie
-  whenJust cmd (runCommand options partialEnv >=> checkOrDie)
+  let (io, cmd) = dispatch options renv
+  runBootCommand options renv initcmd >>= checkOrDie
+  whenJust cmd (runCommand options renv >=> checkOrDie)
   io
 
   where
@@ -122,11 +123,11 @@ run = do
       (cfg, cmd) <- runInit options
       return (cfg, cmd)
 
-    dispatch :: Options Commands -> PartialEnv -> (IO (), Maybe (Command ()))
-    dispatch options penv =
+    dispatch :: Options Commands -> Env -> (IO (), Maybe (Command ()))
+    dispatch options renv =
       case Options.command options of
-        InitCommand     -> (initInteractive options penv, Nothing)
-        ServerCommand   -> (Server.run options penv, Nothing)
+        InitCommand     -> (initInteractive options renv, Nothing)
+        ServerCommand   -> (Server.run options renv, Nothing)
         InfoCommand     -> (pass, Just (Info.run options))
         PolicyCommand o -> (pass, Just (Policy.run o))
         AdminCommand o  -> (pass, Just (Admin.run o))

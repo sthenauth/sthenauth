@@ -25,9 +25,9 @@ module Sthenauth.Shell.Server
 -- Project Imports:
 import qualified Sthenauth.API.Server as API
 import Sthenauth.Shell.Options (Options)
-import Sthenauth.Lang.Script (PartialEnv)
+import Sthenauth.Lang.Script (Env)
 
 --------------------------------------------------------------------------------
 -- | Simple command that dumps the current configuration.
-run :: Options a -> PartialEnv -> IO ()
+run :: Options a -> Env -> IO ()
 run _ = API.run

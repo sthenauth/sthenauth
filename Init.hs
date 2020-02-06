@@ -84,13 +84,13 @@ runInit opts = do
 
 --------------------------------------------------------------------------------
 -- | Executed when the sthenauth subcommand is @init@.
-initInteractive :: Options a -> PartialEnv -> IO ()
-initInteractive opts penv = go >>= \case
+initInteractive :: Options a -> Env -> IO ()
+initInteractive opts renv = go >>= \case
     Left e  -> die (show e)
     Right a -> return a
 
   where
-    go = runCommandSansAuth opts penv $ do
+    go = runCommandSansAuth opts renv $ do
       n <- DB.runQuery (count (selectTable admins))
       when (n == 0) initialAdmin
 
