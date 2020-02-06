@@ -35,13 +35,13 @@ import Sthenauth.Tables.Site as Site
 --------------------------------------------------------------------------------
 -- | Execute a 'Sthenauth' action, producing a Servant @Handler@.
 runRequest
-  :: forall a. PartialEnv
+  :: forall a. Env
   -> Client
   -> Logger
   -> Sthenauth a
   -> Handler a
 runRequest e client l s =
-  liftIO (runScript (e (fst client)) enter) >>= \case
+  liftIO (runScript (Runtime e (fst client)) enter) >>= \case
     Right (a, store') -> leave a store'
     Left  e' -> do
       liftIO (logger_error l (fst client) (show e' :: Text))

@@ -23,6 +23,7 @@ module Sthenauth.API.Server
 import qualified Data.Vault.Lazy as Vault
 import qualified Network.Wai as Wai
 import qualified Network.Wai.Handler.Warp as Warp
+import qualified Network.Wai.Handler.WarpTLS as Warp
 import Servant.API
 import Servant.Server
 import Servant.Server.StaticFiles (serveDirectoryFileServer)
@@ -31,10 +32,11 @@ import Servant.Server.StaticFiles (serveDirectoryFileServer)
 -- Project Imports:
 import qualified Paths_sthenauth as Sthenauth
 import Sthenauth.API.Handlers
-import Sthenauth.API.Middleware
 import Sthenauth.API.Log
+import Sthenauth.API.Middleware
 import Sthenauth.API.Monad
 import Sthenauth.Lang.Script hiding (env)
+import Sthenauth.Types.CertAuthT (serverSettingsForTLS)
 
 --------------------------------------------------------------------------------
 -- | The final API which includes a file server for the UI files.
@@ -52,12 +54,12 @@ finalapi = Proxy
 
 --------------------------------------------------------------------------------
 -- | A server for the 'Sthenauth' API.
-apiServer :: PartialEnv -> Client -> Logger -> Server API
+apiServer :: Env -> Client -> Logger -> Server API
 apiServer env client logger = hoistServer api (runRequest env client logger) app
 
 --------------------------------------------------------------------------------
 -- | A server for the final API.
-server :: PartialEnv -> Vault.Key Client -> Logger -> FilePath -> Server FinalAPI
+server :: Env -> Vault.Key Client -> Logger -> FilePath -> Server FinalAPI
 server env key logger path vault =
   case Vault.lookup key vault of
     Nothing     -> error "shouldn't happen"
@@ -70,7 +72,7 @@ server env key logger path vault =
 
 --------------------------------------------------------------------------------
 -- | Run the actual web server.
-run :: PartialEnv -> IO ()
+run :: Env -> IO ()
 run e = do
   path <- Sthenauth.getDataDir
   rkey <- Vault.newKey
@@ -78,4 +80,5 @@ run e = do
   withLogger (fmap fst . Vault.lookup rkey . Wai.vault) $ \logger -> do
     let settings = Warp.defaultSettings & Warp.setPort 3001
         server'  = serve finalapi (server e rkey logger (path </> "www"))
-    Warp.runSettings settings (middleware rkey logger server')
+    tls <- serverSettingsForTLS (e ^. envCertAuth)
+    Warp.runTLS tls settings (middleware rkey logger server')
