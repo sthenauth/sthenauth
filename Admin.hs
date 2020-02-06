@@ -40,64 +40,53 @@ import Sthenauth.Tables.Site.Key as SiteKey
 import Sthenauth.Types
 
 --------------------------------------------------------------------------------
--- | Try to insert a new site into the database.
-insertSite
-  :: ( MonadDatabase m
-     , MonadError  e m
-     , AsDbError   e
-     )
-  => SiteF SqlWrite
-  -> Bool -- ^ Is the new site the default site?
-  -> (SiteId -> SiteKey.KeyF SqlWrite)
-  -> m (Maybe SiteId)
-insertSite site def keyf = transaction $ do
-    when def Site.resetDefaultSite
-    sid <- listToMaybe <$> insert inS
-    mapM_ (insert . inK) sid
-    pure sid
-
-  where
-    inS = Insert sites [site] (rReturning Site.pk) Nothing
-    inK sid = Insert SiteKey.site_keys [keyf sid] rCount Nothing
-
---------------------------------------------------------------------------------
 -- | Validate a new site, then insert it into the database.
 createSite
-  :: ( MonadDatabase m
-     , MonadCrypto k m
-     , MonadError  e m
+  :: forall m k e r.
+     ( Database e m
+     , Crypto k e m
      , MonadReader r m
      , HasSecrets  r k
      , MonadRandom   m
      , AsSystemError e
      , AsUserError e
-     , AsDbError   e
      )
    => UTCTime
    -> SiteF ForUI
    -> m SiteId
 createSite time s = do
-  site <- runValidationEither checkSite s >>=
-            either (throwing _ValidationError) pure
+    site <- runValidationEither checkSite s >>=
+              either (throwing _ValidationError) pure
+    key <- mkKey
+    insertSite site (fromMaybe False $ isDefault s) (onInsert key) >>=
+      maybe (throwing _RuntimeError "failed to insert new site") pure
+  where
+    -- Code to run after a Site is inserted into the database.
+    onInsert
+      :: (SiteId -> SiteKey.KeyF SqlWrite)
+      -> Site
+      -> Query SiteId
+    onInsert key site = do
+      1 <- insert (Insert SiteKey.site_keys [key (Site.pk site)] rCount Nothing)
+      pure (Site.pk site)
 
-  let expireIn = addSeconds (defaultPolicy ^. jwkExpiresIn) time
-
-  (jwk, keyid) <- newJWK Sig
-  ejwk <- encrypt jwk
-
-  let key sid = SiteKey.Key
-        { pk = Nothing
-        , createdAt = Nothing
-        , updatedAt = Nothing
-        , siteId = toFields sid
-        , kid = toFields keyid
-        , keyUse = toFields Sig
-        , keyData = toFields ejwk
-        , expiresAt = toFields expireIn
-        }
-
-  insertSite site (fromMaybe False $ isDefault s) key >>=
-    maybe (throwing _RuntimeError "failed to insert new site") pure
+    -- Create a function that when given a SiteId, returns a site key.
+    mkKey :: m (SiteId -> SiteKey.KeyF SqlWrite)
+    mkKey = do
+      let expireIn = addSeconds (defaultPolicy ^. jwkExpiresIn) time
+      (jwk, keyid) <- newJWK Sig
+      ejwk <- encrypt jwk
+      pure $ \sid ->
+        SiteKey.Key
+          { pk        = Nothing
+          , createdAt = Nothing
+          , updatedAt = Nothing
+          , siteId    = toFields sid
+          , kid       = toFields keyid
+          , keyUse    = toFields Sig
+          , keyData   = toFields ejwk
+          , expiresAt = toFields expireIn
+          }
 
 --------------------------------------------------------------------------------
 -- | Locate the active site.
