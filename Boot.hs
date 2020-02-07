@@ -42,26 +42,32 @@ import Sthenauth.Types.CertAuthT (initCertAuth)
 import qualified Sthenauth.Shell.Admin as Admin
 import qualified Sthenauth.Shell.Info as Info
 import qualified Sthenauth.Shell.Policy as Policy
+import qualified Sthenauth.Shell.Provider as Provider
 import qualified Sthenauth.Shell.Server as Server
+import qualified Sthenauth.Shell.Site as Site
 
 --------------------------------------------------------------------------------
 -- | The various commands that can be executed.
 data Commands
-  = InitCommand
-  | ServerCommand
+  = AdminCommand Admin.Action
   | InfoCommand
+  | InitCommand
   | PolicyCommand Policy.SubCommand
-  | AdminCommand Admin.Action
+  | ProviderCommand Provider.SubCommand
+  | ServerCommand
+  | SiteCommand Site.Actions
 
 --------------------------------------------------------------------------------
 -- Command line parser for each command.
 instance IsCommand Commands where
   parseCommand = hsubparser $
-    mconcat [ cmd "init" "Interactive system initialization" (pure InitCommand)
-            , cmd "server" "Start the HTTP server" (pure ServerCommand)
+    mconcat [ cmd "admin" "Manage admin accounts" (AdminCommand <$> Admin.options)
             , cmd "info" "Display evaluated config" (pure InfoCommand)
+            , cmd "init" "Interactive system initialization" (pure InitCommand)
             , cmd "policy" "Edit site policy settings" (PolicyCommand <$> Policy.options)
-            , cmd "admin" "Manage admin accounts" (AdminCommand <$> Admin.options)
+            , cmd "provider" "Manage authentication providers" (ProviderCommand <$> Provider.options)
+            , cmd "server" "Start the HTTP server" (pure ServerCommand)
+            , cmd "site" "Manage site settings" (SiteCommand <$> Site.options)
             ]
     where
       cmd :: String -> String -> Parser a -> Mod CommandFields a
@@ -126,19 +132,23 @@ run = do
     dispatch :: Options Commands -> Env -> (IO (), Maybe (Command ()))
     dispatch options renv =
       case Options.command options of
-        InitCommand     -> (initInteractive options renv, Nothing)
-        ServerCommand   -> (Server.run options renv, Nothing)
-        InfoCommand     -> (pass, Just (Info.run options))
-        PolicyCommand o -> (pass, Just (Policy.run o))
-        AdminCommand o  -> (pass, Just (Admin.run o))
+        AdminCommand o    -> (pass, Just (Admin.run o))
+        InfoCommand       -> (pass, Just (Info.run options))
+        InitCommand       -> (initInteractive options renv, Nothing)
+        PolicyCommand o   -> (pass, Just (Policy.run o))
+        ProviderCommand o -> (pass, Just (Provider.run o))
+        ServerCommand     -> (Server.run options renv, Nothing)
+        SiteCommand o     -> (pass, Just (Site.run o))
 
 --------------------------------------------------------------------------------
 -- | Some commands imply some of the global options.
 enableImplicitOptions :: Options Commands -> Options Commands
 enableImplicitOptions input =
   case Options.command input of
-    InitCommand     -> input { Options.init = True, Options.migrate = True }
-    ServerCommand   -> input
-    InfoCommand     -> input
-    PolicyCommand _ -> input
-    AdminCommand _  -> input
+    AdminCommand _    -> input
+    InfoCommand       -> input
+    InitCommand       -> input { Options.init = True, Options.migrate = True }
+    PolicyCommand _   -> input
+    ProviderCommand _ -> input
+    ServerCommand     -> input
+    SiteCommand _     -> input
