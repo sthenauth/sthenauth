@@ -28,7 +28,6 @@ import Control.Monad.Database.Class
 import qualified Data.UUID as UUID
 import Iolaus.Database.Extra (lowerEq)
 import Iolaus.Database.Query
-import Iolaus.Validation (runValidationEither)
 import qualified Opaleye as O
 import Opaleye.SqlTypes
 
@@ -55,8 +54,7 @@ createSite
    -> SiteF ForUI
    -> m SiteId
 createSite time s = do
-    site <- runValidationEither checkSite s >>=
-              either (throwing _ValidationError) pure
+    site <- validateSite s
     key <- mkKey
     insertSite site (fromMaybe False $ isDefault s) (onInsert key) >>=
       maybe (throwing _RuntimeError "failed to insert new site") pure
