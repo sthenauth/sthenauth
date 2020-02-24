@@ -27,40 +27,38 @@ module Sthenauth.Core.AuthN
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
-import Control.Monad.Database.Class
+-- Imports:
 import Data.Time.Clock (utctDay)
 import qualified Iolaus.Crypto.Password as Crypto
 import Iolaus.Database.Query
 import qualified Opaleye as O
-
---------------------------------------------------------------------------------
--- Project Imports:
-import Sthenauth.Tables.Account (Account, AccountF, AccountId)
-import qualified Sthenauth.Tables.Account as Account
-import qualified Sthenauth.Tables.Email as Email
-import Sthenauth.Tables.Session (Session, ClearSessionKey)
-import qualified Sthenauth.Tables.Session as Session
-import Sthenauth.Tables.Site (Site, SiteId)
-import Sthenauth.Tables.Site as Site
-import Sthenauth.Types
+import Sthenauth.Core.Account
+import Sthenauth.Core.CurrentUser
+import Sthenauth.Core.Email
+import Sthenauth.Core.Error
+import Sthenauth.Core.Policy
+import Sthenauth.Core.PostLogin
+import Sthenauth.Core.Remote
+import Sthenauth.Core.Session
+import Sthenauth.Core.Site
+import Sthenauth.Crypto.Effect
+import Sthenauth.Database.Effect
+import Sthenauth.Providers.Local.Login
 
 --------------------------------------------------------------------------------
 -- Verify that the given password text is strong enough to be hashed.
 asStrongPassword
-  :: ( MonadCrypto k m
-     , MonadError  e m
-     , MonadReader r m
-     , HasConfig r
-     , AsUserError e
+  :: ( Has Crypto sig m
+     , Has Error  sig m
      )
-  => UTCTime
+  => Policy
+  -> RequestTime
   -> Password Clear
   -> m (Password Strong)
-asStrongPassword time input = do
-  zc <- views config zxcvbnConfig
-  let p = Crypto.toStrongPassword zc (utctDay time) input
-  either (throwing _WeakPasswordError) pure p
+asStrongPassword policy time input = do
+  let zc = zxcvbnConfig policy
+      p  = Crypto.toStrongPassword zc (utctDay time) input
+  either (throwUserError . WeakPasswordError) pure p
   -- FIXME: validate the length of the password after it is
   -- normalized.
 
@@ -69,67 +67,50 @@ asStrongPassword time input = do
 -- Automatically upgrades the password if necessary.  May throw an
 -- error directing the user to change their password.
 verifyAndUpgradePassword
-  :: ( MonadCrypto k m
-     , MonadDatabase m
-     , MonadError e m
-     , AsUserError e
-     , AsDbError   e
-     , MonadReader r m
-     , HasConfig r
-     , HasSecrets r k
-     , HasRemote r
+  :: ( Has Database sig m
+     , Has Crypto   sig m
+     , Has Error    sig m
      )
-  => Password Clear
+  => Policy
+  -> RequestTime
+  -> Password Clear
   -> Account
   -> m Bool
-verifyAndUpgradePassword p a =
-  case Account.password a of
+verifyAndUpgradePassword policy rtime passwd acct =
+  case accountPassword acct of
     Nothing -> return False
-    Just p' -> verifyPassword p p' >>= \case
-      PasswordMismatch     -> return False
-      PasswordsMatch       -> return True
-      PasswordNeedsUpgrade -> upgradePassword p (Account.pk a) $> True
+    Just p' -> verifyPassword passwd p' >>= \case
+      PasswordMismatch ->
+        pure False
+      PasswordsMatch ->
+        pure True
+      PasswordNeedsUpgrade ->
+        upgradePassword policy rtime passwd (accountId acct) $> True
 
 --------------------------------------------------------------------------------
 -- | Upgrade a password.
 upgradePassword
-  :: ( MonadCrypto k m
-     , MonadDatabase m
-     , MonadError e m
-     , AsDbError  e
-     , AsUserError e
-     , MonadReader r m
-     , HasConfig r
-     , HasSecrets r k
-     , HasRemote r
+  :: ( Has Database sig m
+     , Has Crypto   sig m
+     , Has Error    sig m
      )
-  => Password Clear
+  => Policy
+  -> RequestTime
+  -> Password Clear
   -> AccountId
   -> m ()
-upgradePassword pw aid = do
-  time <- view (remote.requestTime)
-  zc <- views config zxcvbnConfig
-
-  let ps = Crypto.toStrongPassword zc (utctDay time) pw
-  ps' <- either (const $ throwing _MustChangePasswordError ()) pure ps
+upgradePassword policy time pw aid = do
+  let zc = zxcvbnConfig policy
+      ps = Crypto.toStrongPassword zc (utctDay time) pw
+  ps' <- either (const (throwUserError MustChangePasswordError)) pure ps
   ph <- toHashedPassword ps'
-
-  void . transaction . update $ O.Update
-    { O.uTable = Account.accounts
-    , uUpdateWith = O.updateEasy (\a -> a {Account.password = O.toNullable (O.toFields ph)})
-    , uWhere = \a -> Account.pk a .== O.toFields aid
-    , uReturning = O.rCount
-    }
+  void . transaction . update $ changePassword aid ph
 
 --------------------------------------------------------------------------------
--- FIXME: use selectFold or maybe just select the ID column.
 doesAccountExist
-  :: ( MonadDatabase m
-     , MonadCrypto k m
-     , MonadError  e m
-     , AsDbError   e
-     , MonadReader r m
-     , HasSecrets  r k
+  :: ( Has Database sig m
+     , Has Crypto   sig m
+     , Has Error    sig m
      )
   => SiteId
   -> Login
@@ -140,12 +121,9 @@ doesAccountExist sid l = do
 
 --------------------------------------------------------------------------------
 getAccountFromLogin
-  :: ( MonadDatabase m
-     , MonadCrypto k m
-     , MonadError  e m
-     , AsDbError   e
-     , MonadReader r m
-     , HasSecrets  r k
+  :: ( Has Database sig m
+     , Has Crypto   sig m
+     , Has Error    sig m
      )
   => SiteId
   -> Login
@@ -156,17 +134,14 @@ getAccountFromLogin sid l = do
 
 --------------------------------------------------------------------------------
 accountByLogin
-  :: ( MonadCrypto k m
-     , MonadReader r m
-     , HasSecrets  r k
-     )
+  :: Has Crypto sig m
   => SiteId
   -> Login
   -> m (O.Query (AccountF SqlRead))
 accountByLogin sid l =
   case getLogin l of
-    Left  u -> pure $ query (Account.findAccountByUsername u)
-    Right e -> query . Email.findAccountByEmail <$> toSaltedHash (getEmail e)
+    Left  u -> pure $ query (findAccountByUsername u)
+    Right e -> query . findAccountByEmail <$> toSaltedHash (getEmail e)
 
   where
     -- Restrict the accounts table then run a sub-query.
@@ -174,60 +149,44 @@ accountByLogin sid l =
       :: O.SelectArr (AccountF SqlRead) (AccountF SqlRead)
       -> O.Select (AccountF SqlRead)
     query sub = proc () -> do
-      t1 <- O.selectTable Account.accounts -< ()
-      O.restrict -< Account.siteId t1 .== O.toFields sid
+      t1 <- fromAccounts -< ()
+      O.restrict -< accountSiteId t1 .== O.toFields sid
       sub -< t1
 
 --------------------------------------------------------------------------------
 -- Issue a brand new session to the given account.
 issueSession
-  :: ( MonadDatabase m
-     , MonadCrypto k m
-     , MonadError  e m
-     , MonadReader r m
-     , HasSecrets  r k
-     , AsDbError   e
-     , AsSystemError e
-     , HasConfig r
-     , HasRemote r
+  :: ( Has Database sig m
+     , Has Crypto   sig m
+     , Has Error    sig m
      )
   => Site
+  -> Remote
   -> Account
   -> m (Session, ClearSessionKey, PostLogin)
-issueSession s a = do
-  r <- view remote
-  c <- view config
+issueSession site remote acct = do
+  (clear, key) <- newSessionKey
 
-  (clear, key) <- Session.newSessionKey
-
-  let sessionW = Session.newSession (Account.pk a) r (Site.policy s) key
-      query = Session.insertSession (c ^. maxSessionsPerAccount) sessionW
-      plogin = Site.postLogin s
+  let sessionW = newSession (accountId acct) remote (sitePolicy site) key
+      query = insertSession (sitePolicy site ^. maxSessionsPerAccount) sessionW
+      plogin = postLogin site
 
   transaction query >>= \case
-    Nothing -> throwing _RuntimeError "failed to create a session"
+    Nothing -> throwError (RuntimeError "failed to create a session")
     Just session -> return (session, clear, plogin)
 
 --------------------------------------------------------------------------------
--- | Resume an existing session (sets the 'currentUser' state field.)
+-- | Resume an existing session.
 resumeSession
-  :: ( MonadDatabase m
-     , MonadCrypto k m
-     , MonadError  e m
-     , MonadReader r m
-     , AsDbError   e
-     , MaybeHasSite r
-     , HasRemote r
-     , HasSecrets r k
-     , MonadState s m
-     , HasCurrentUser s
+  :: ( Has Database sig m
+     , Has Crypto   sig m
+     , Has Error    sig m
+     , Has (State CurrentUser) sig m
      )
-  => ClearSessionKey
-  -> m CurrentUser
-resumeSession key = do
-  user <- view maybeSite >>= \case
-    Nothing   -> return notLoggedIn
-    Just site -> currentUserFromSessionKey (Site.pk site) key
-
-  assign currentUser user
-  return user
+  => Site
+  -> RequestTime
+  -> ClearSessionKey
+  -> m ()
+resumeSession site rtime key = do
+  user <- currentUserFromSessionKey site rtime key
+  put user

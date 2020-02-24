@@ -7,7 +7,7 @@ Copyright:
   license terms in the LICENSE file found in the top-level directory
   of this distribution and at:
 
-    https://code.devalot.com/sthenauth/sthenauth
+    git://code.devalot.com/sthenauth.git
 
   No part of this package, including this file, may be copied,
   modified, propagated, or distributed except according to the terms
@@ -15,121 +15,106 @@ Copyright:
 
 License: Apache-2.0
 
+An admin is an account with unrestricted access to Sthenauth.
+
 -}
 module Sthenauth.Core.Admin
-  ( createSite
-  , siteFromFQDN
+  ( AdminF(..)
+  , Admin
+  , AlterAdmin(..)
+  , fromAdmins
+  , alterAdmin
+  , insertAdmin
+  , deleteAdmin
+  , accountsAdminJoin
+  , findAdmin
+  , selectAdmin
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
 import Control.Arrow (returnA)
-import Control.Monad.Database.Class
-import qualified Data.UUID as UUID
-import Iolaus.Database.Extra (lowerEq)
 import Iolaus.Database.Query
+import Iolaus.Database.Table
 import qualified Opaleye as O
-import Opaleye.SqlTypes
+import Sthenauth.Core.Account
 
 --------------------------------------------------------------------------------
--- Project Imports:
-import Sthenauth.Tables.Site as Site
-import Sthenauth.Tables.Site.Alias as SiteAlias
-import Sthenauth.Tables.Site.Key as SiteKey
-import Sthenauth.Types
+-- | The @admins@ table.
+data AdminF f = Admin
+  { adminAccountId :: Col f "account_id" AccountId SqlUuid ForeignKey
+    -- ^ The account this email address is for (foreign key).
+
+  , adminCreatedAt :: Col f "created_at" UTCTime SqlTimestamptz ReadOnly
+    -- ^ The time this record was created.
+
+  } deriving Generic
+
+makeTable ''AdminF "admins"
 
 --------------------------------------------------------------------------------
--- | Validate a new site, then insert it into the database.
-createSite
-  :: forall m k e r.
-     ( Database e m
-     , Crypto k e m
-     , MonadReader r m
-     , HasSecrets  r k
-     , MonadRandom   m
-     , AsSystemError e
-     , AsUserError e
-     )
-   => UTCTime
-   -> SiteF ForUI
-   -> m SiteId
-createSite time s = do
-    site <- validateSite s
-    key <- mkKey
-    insertSite site (fromMaybe False $ isDefault s) (onInsert key) >>=
-      maybe (throwing _RuntimeError "failed to insert new site") pure
+-- | Monomorphic admin.
+type Admin = AdminF ForHask
+
+--------------------------------------------------------------------------------
+fromAdmins :: Select (AdminF SqlRead)
+fromAdmins = selectTable admins
+
+--------------------------------------------------------------------------------
+-- | Ways that an admin account can be altered.
+data AlterAdmin
+  = PromoteToAdmin AccountId   -- ^ Insert a new row.
+  | DemoteFromAdmin AccountId  -- ^ Delete an existing row.
+
+--------------------------------------------------------------------------------
+-- | A query that will execute an 'AlterAdmin' command.
+alterAdmin :: AlterAdmin -> Query ()
+alterAdmin = \case
+  PromoteToAdmin aid -> do
+    n <- selectAdmin aid
+    when (n == 0) $ void (insertAdmin aid)
+
+  DemoteFromAdmin aid ->
+    void (deleteAdmin aid)
+
+--------------------------------------------------------------------------------
+-- | Insert a new admin record for the given account.
+insertAdmin :: AccountId -> Query (Maybe Admin)
+insertAdmin aid = insert1 (ins $ Admin (toFields aid) Nothing)
   where
-    -- Code to run after a Site is inserted into the database.
-    onInsert
-      :: (SiteId -> SiteKey.KeyF SqlWrite)
-      -> Site
-      -> Query SiteId
-    onInsert key site = do
-      1 <- insert (Insert SiteKey.site_keys [key (Site.pk site)] rCount Nothing)
-      pure (Site.pk site)
-
-    -- Create a function that when given a SiteId, returns a site key.
-    mkKey :: m (SiteId -> SiteKey.KeyF SqlWrite)
-    mkKey = do
-      let expireIn = addSeconds (defaultPolicy ^. jwkExpiresIn) time
-      (jwk, keyid) <- newJWK Sig
-      ejwk <- encrypt jwk
-      pure $ \sid ->
-        SiteKey.Key
-          { pk        = Nothing
-          , createdAt = Nothing
-          , updatedAt = Nothing
-          , siteId    = toFields sid
-          , kid       = toFields keyid
-          , keyUse    = toFields Sig
-          , keyData   = toFields ejwk
-          , expiresAt = toFields expireIn
-          }
+    ins :: AdminF SqlWrite -> O.Insert [Admin]
+    ins a = Insert admins [a] (rReturning id) Nothing
 
 --------------------------------------------------------------------------------
--- | Locate the active site.
-siteFromFQDN
-  :: ( MonadDatabase m
-     , MonadError  e m
-     , AsDbError   e
-     )
-  => Text
-  -> m (Maybe Site)
-siteFromFQDN fqdn =
-    runQuery (select1 $ O.orderBy (O.asc isDefault) query)
+-- | Remove a admin record.
+deleteAdmin :: AccountId -> Query Int64
+deleteAdmin aid = delete $ O.Delete
+  { O.dTable     = admins
+  , O.dWhere     = \t -> adminAccountId t .== toFields aid
+  , O.dReturning = O.rCount
+  }
 
+--------------------------------------------------------------------------------
+-- | Join the accounts table to the admins table.
+accountsAdminJoin :: SelectArr (AccountF SqlRead) (AdminF ForceNullable)
+accountsAdminJoin = proc t1 ->
+  O.leftJoinA (O.selectTable admins) -<
+    (\t2 -> accountId t1 .== adminAccountId t2)
+
+--------------------------------------------------------------------------------
+-- | A query that will limit the admin records to those that are
+-- associated with the given account.
+findAdmin :: AccountId -> O.SelectArr (AdminF SqlRead) (AdminF SqlRead)
+findAdmin aid = proc t -> do
+  O.restrict -< adminAccountId t .== O.toFields aid
+  returnA -< t
+
+--------------------------------------------------------------------------------
+-- | Count the number of admin records for the given account ID.
+selectAdmin :: AccountId -> Query Int64
+selectAdmin = count . query
   where
-    -- Select sites where...
-    query :: O.Select (SiteF SqlRead)
-    query = proc () -> do
-      t1 <- O.selectTable sites -< ()
-      (_, domain) <- aliasJoin -< t1
-
-          -- 1. Request domain matches the site's FQDN.
-      let siteMatch = Site.fqdn t1 `lowerEq` fqdn
-
-          -- 2. UUID match (mostly for command line and testing).
-          uuidMatch = case UUID.fromText fqdn of
-                        Nothing -> toFields False
-                        Just u  -> Site.pk t1 .== toFields u
-
-          -- 3. Request domain matches a site alias' FQDN.
-          aliasMatch = O.matchNullable (toFields False)
-                       (`lowerEq` fqdn) domain
-
-          -- 4. The site is marked as the default site.
-          defaultMatch = Site.isDefault t1
-
-      O.restrict -< (siteMatch .|| uuidMatch .|| aliasMatch .|| defaultMatch)
-      returnA -< t1
-
-    -- Join the site and site_aliases tables.
-    aliasJoin :: O.SelectArr (SiteF SqlRead) (O.FieldNullable SqlUuid, O.FieldNullable SqlText)
-    aliasJoin = proc t1 -> O.leftJoinA aliasSelect -<
-      (\(uuid, _) -> uuid .== Site.pk t1)
-
-    -- A subset of the site_aliases table.
-    aliasSelect :: O.Select (O.Column SqlUuid, O.Column SqlText)
-    aliasSelect = proc () -> do
-      t <- O.selectTable SiteAlias.site_aliases -< ()
-      returnA -< (SiteAlias.siteId t, SiteAlias.fqdn t)
+    query aid = proc () -> do
+      t <- O.selectTable admins -< ()
+      findAdmin aid -< t
+      returnA -< t
