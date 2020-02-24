@@ -15,7 +15,7 @@ License: Apache-2.0
 
 -}
 module Sthenauth.Shell.Server
-  ( run
+  ( main
   ) where
 
 --------------------------------------------------------------------------------
@@ -24,10 +24,10 @@ module Sthenauth.Shell.Server
 --------------------------------------------------------------------------------
 -- Project Imports:
 import qualified Sthenauth.API.Server as API
+import Sthenauth.Core.Runtime
 import Sthenauth.Shell.Options (Options)
-import Sthenauth.Lang.Script (Env)
 
 --------------------------------------------------------------------------------
 -- | Simple command that dumps the current configuration.
-run :: Options a -> Env -> IO ()
-run _ = API.run
+main :: Options a -> Runtime -> IO ()
+main _ = API.main

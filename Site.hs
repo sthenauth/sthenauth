@@ -17,19 +17,14 @@ License: Apache-2.0
 module Sthenauth.Shell.Site
   ( Actions
   , options
-  , run
+  , main
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
 import Options.Applicative as Options
-
---------------------------------------------------------------------------------
--- Project Imports:
-import Sthenauth.Lang.Script (env, envSite)
+import Sthenauth.Core.Site
 import Sthenauth.Shell.Command
-import Sthenauth.Tables.Site
-import Sthenauth.Types
 
 --------------------------------------------------------------------------------
 data Actions = Actions
@@ -54,13 +49,11 @@ options =
           ]))
 
 --------------------------------------------------------------------------------
-run :: Actions -> Command ()
-run actions = view (env.envSite) >>= \case
-  Nothing ->
-    throwing _MissingSiteError ()
-  Just site ->
-    updateSite (pk site)
-      ((siteForUI site)
-       { fqdn = fromMaybe (fqdn site) (setFqdn actions)
-       , afterLoginUrl = setAfterLoginUrl actions <|> Just (afterLoginUrl site)
-       })
+main :: Actions -> Command ()
+main actions = do
+  site <- currentSite
+  updateSite (siteId site)
+    ((siteForUI site)
+      { siteFqdn = fromMaybe (siteFqdn site) (setFqdn actions)
+      , afterLoginUrl = setAfterLoginUrl actions <|> Just (afterLoginUrl site)
+      })

@@ -25,16 +25,16 @@ module Sthenauth.Shell.Helpers
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
 import Data.Time.Clock (getCurrentTime)
 import Iolaus.Crypto.Password as Crypto
-import System.Console.Byline as Byline
-
---------------------------------------------------------------------------------
--- Project Imports:
 import Sthenauth.Core.AuthN (asStrongPassword)
-import Sthenauth.Shell.Byline
-import Sthenauth.Types
+import Sthenauth.Core.Email
+import Sthenauth.Core.Error
+import Sthenauth.Core.Policy
+import Sthenauth.Crypto.Effect
+import Sthenauth.Lang.Script (MonadByline(..))
+import System.Console.Byline as Byline
 
 --------------------------------------------------------------------------------
 -- | Run a byline action with a text conversion function.
@@ -56,11 +56,8 @@ askWith action check =
 --------------------------------------------------------------------------------
 -- | If given a @Just@, try to parse it.  If given @Nothing@, call 'askWith'.
 checkOrAsk
-  :: forall m e a .
-     ( MonadByline m
-     , MonadError e m
-     , AsSystemError e
-     )
+  :: forall sig m a .
+     (MonadByline m, Has Error sig m)
   => Maybe Text
   -> Byline IO Text
   -> (Text -> m (Either Text a))
@@ -69,7 +66,7 @@ checkOrAsk mt action check =
   case mt of
     Nothing -> askWith action check
     Just t  -> check t >>= \case
-      Left e  -> throwing _RuntimeError e
+      Left e  -> throwError (RuntimeError e)
       Right x -> return x
 
 --------------------------------------------------------------------------------
@@ -86,8 +83,7 @@ askEmail = askWith emailAction checkEmail
 maybeAskEmail
   :: ( MonadIO m
      , MonadByline m
-     , MonadError e m
-     , AsSystemError e
+     , Has Error sig m
      )
   => Maybe Text
   -> m Email
@@ -108,13 +104,7 @@ emailAction = Byline.ask "Email Address: " Nothing
 
 --------------------------------------------------------------------------------
 -- | Ask for a password if the given text is 'Nothing'.
-maybeAskPassword
-  :: ( MonadByline m
-     , MonadError e m
-     , AsSystemError e
-     )
-  => Maybe Text
-  -> m Text
+maybeAskPassword :: (MonadByline m, Has Error sig m) => Maybe Text -> m Text
 maybeAskPassword mt =
   checkOrAsk mt (askPassword "Password: " Nothing) (return . Right)
 
@@ -123,14 +113,12 @@ maybeAskPassword mt =
 askNewPassword
   :: ( MonadIO m
      , MonadByline m
-     , MonadCrypto k m
-     , MonadError e m
-     , AsUserError e
-     , MonadReader r m
-     , HasConfig r
+     , Has Crypto sig m
+     , Has Error sig m
      )
-  => m (Text, Password Strong)
-askNewPassword = go
+  => Policy
+  -> m (Text, Password Strong)
+askNewPassword policy = go
   where
     go = do
       (p, s) <- new
@@ -141,7 +129,7 @@ askNewPassword = go
 
     new = do
       p <- liftByline $ askPassword "New Password: " Nothing
-      checkPasswordStrength (Crypto.toPassword p) >>= \case
+      checkPasswordStrength policy (Crypto.toPassword p) >>= \case
         Left _  -> liftByline (sayLn ("Weak password!" <> fg red)) >> new
         Right s -> return (p, s)
 
@@ -151,37 +139,34 @@ askNewPassword = go
 maybeAskNewPassword
   :: ( MonadIO m
      , MonadByline m
-     , MonadCrypto k m
-     , MonadError e m
-     , AsSystemError e
-     , AsUserError e
-     , MonadReader r m
-     , HasConfig r
+     , Has Crypto sig m
+     , Has Error sig m
      )
-  => Maybe Text
+  => Policy
+  -> Maybe Text
   -> m (Text, Password Strong)
-maybeAskNewPassword = \case
-  Nothing -> askNewPassword
+maybeAskNewPassword policy = \case
+  Nothing -> askNewPassword policy
   Just t  ->
-    checkPasswordStrength (Crypto.toPassword t) >>= \case
-      Left e  -> throwing _RuntimeError e
+    checkPasswordStrength policy (Crypto.toPassword t) >>= \case
+      Left e  -> throwError (RuntimeError e)
       Right s -> return (t, s)
 
 --------------------------------------------------------------------------------
 -- | Verify the strength of a password.
 checkPasswordStrength
-  :: ( MonadIO m
-     , MonadCrypto k m
-     , MonadError e m
-     , AsUserError e
-     , MonadReader r m
-     , HasConfig r
+  :: forall sig m.
+     ( MonadIO m
+     , Has Crypto sig m
+     , Has Error  sig m
      )
-  => Password Clear
+  => Policy
+  -> Password Clear
   -> m (Either Text (Password Strong))
-checkPasswordStrength p = do
-  time <- liftIO getCurrentTime
-  catching _WeakPasswordError (Right <$> asStrongPassword time p) handleError
-
+checkPasswordStrength policy p = do
+    time <- liftIO getCurrentTime
+    catchError (Right <$> asStrongPassword policy time p) handleError
   where
-    handleError = return . Left . show
+    handleError :: BaseError -> m (Either Text (Password Strong))
+    handleError (ApplicationUserError w@(WeakPasswordError _)) = pure (Left (show w))
+    handleError e = throwError e

@@ -17,103 +17,109 @@ License: Apache-2.0
 module Sthenauth.Shell.Command
   ( Command
   , runCommand
-  , runCommandSansAuth
   , runBootCommand
-  , liftByline
-  , liftSthenauth
-  , config
+  , currentSite
+  , currentConfig
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
-import Control.Monad.Crypto.Cryptonite (Cryptonite)
+-- Imports:
+import Control.Algebra
+import Control.Carrier.Database (runDatabase)
+import Control.Carrier.Error.Either (runError)
+import Control.Effect.Reader
+import Crypto.Random (MonadRandom(..))
 import Data.Time.Clock (getCurrentTime)
-
---------------------------------------------------------------------------------
--- Project Imports:
+import Sthenauth.Core.Address (localhost)
+import Sthenauth.Core.Config
+import Sthenauth.Core.CurrentUser
+import Sthenauth.Core.Error
+import Sthenauth.Core.Remote
+import Sthenauth.Core.Runtime
+import Sthenauth.Core.Site (Site, siteFqdn, siteFromFQDN)
+import Sthenauth.Crypto.Effect
 import Sthenauth.Lang.Class
 import Sthenauth.Lang.Script
 import Sthenauth.Shell.AuthN
-import Sthenauth.Shell.Byline
-import Sthenauth.Shell.Error
 import Sthenauth.Shell.Options (Options, site)
-import qualified Sthenauth.Tables.Site as Site
-import Sthenauth.Types
 
 --------------------------------------------------------------------------------
 -- | A type encapsulating Sthenauth shell commands.
-newtype Command a = Command { unC :: Script a }
+newtype Command a = Command { unC :: Script IO a }
   deriving newtype
     ( Functor, Applicative, Monad
-    , MonadIO
-    , MonadError  SystemError
-    , MonadState  Store
-    , MonadReader Runtime
     , MonadSthenauth
     , MonadByline
-    , MonadDatabase
-    , MonadCrypto Cryptonite
-    , MonadRandom
     )
 
 --------------------------------------------------------------------------------
+instance MonadIO Command where
+  liftIO = Command . lift . liftIO
+
+instance Algebra (ScriptEff IO) Command where
+  alg = Command . alg . handleCoercible
+
+instance MonadRandom Command where
+  getRandomBytes = randomByteArray
+
+--------------------------------------------------------------------------------
+currentSite :: Command Site
+currentSite = do
+  (_ :: Runtime, site, _ :: Remote) <- ask
+  pure site
+
+--------------------------------------------------------------------------------
+currentConfig :: Command Config
+currentConfig = do
+  (env, _ :: Site, _ :: Remote) <- ask
+  pure (rtConfig env)
+
+--------------------------------------------------------------------------------
 runCommand
-  :: forall m o a.
-     ( MonadIO m )
-  => Options o
-  -> Env
+  :: forall o a.
+     Options o
+  -> Runtime
   -> Command a
-  -> m (Either ShellError a)
-runCommand opts renv cmd =
-    runCommandSansAuth opts renv go
+  -> IO (Either BaseError a)
+runCommand opts env cmd =
+    runBootCommand opts env go
   where
     go :: Command a
     go = do
-      user <- authenticate opts
-      unless (isAdmin user) (throwing _PermissionDenied ())
+      site <- currentSite
+      user <- authenticate opts site
+      unless (isAdmin user) (throwUserError PermissionDenied)
       cmd -- Run the original action.
 
 --------------------------------------------------------------------------------
--- | Execute a 'Command' without authenticating first.
-runCommandSansAuth
-  :: forall m o a.
-     ( MonadIO m )
-  => Options o
-  -> Env
-  -> Command a
-  -> m (Either ShellError a)
-runCommandSansAuth opts renv cmd =
-    runBootCommand opts renv (Command go)
-  where
-    go :: Script a
-    go = withSite (site opts) $
-      Site.fqdn <<$>> view envSite >>= \case
-        Nothing   -> unC cmd
-        Just fqdn -> local ((remote.requestFqdn) .~ fqdn) (unC cmd)
-
---------------------------------------------------------------------------------
--- | Execute a command without any authentication or database access.
+-- | Execute a command without any authentication.
 runBootCommand
-  :: forall m o a.
-     ( MonadIO m )
-  => Options o
-  -> Env
+  :: Options o
+  -> Runtime
   -> Command a
-  -> m (Either ShellError a)
-runBootCommand opts renv cmd = do
-    e <- Runtime renv <$> liftIO mkRemote
-    bimap SError fst <$> runScript e (unC cmd)
+  -> IO (Either BaseError a)
+runBootCommand opts env cmd =
+  findSiteFromOptions >>= \case
+    Left e -> pure (Left e)
+    Right site -> do
+      remote <- mkRemote site
+      snd <<$>> runScript env site remote notLoggedIn (unC cmd)
 
   where
-    mkRemote :: IO Remote
-    mkRemote = do
+    findSiteFromOptions :: IO (Either BaseError Site)
+    findSiteFromOptions
+      = runDatabase (rtDb env) (siteFromFQDN (site opts))
+      & runError
+
+    mkRemote :: Site -> IO Remote
+    mkRemote site = do
       rid <- genRequestId
       time <- liftIO getCurrentTime
 
       return Remote
         { _address     = localhost
         , _userAgent   = "Sthenauth Command Line"
-        , _requestFqdn = fromMaybe "default" (site opts)
+        , _requestFqdn = siteFqdn site
         , _requestId   = rid
         , _requestTime = time
         }

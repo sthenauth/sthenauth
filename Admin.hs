@@ -17,20 +17,19 @@ License: Apache-2.0
 module Sthenauth.Shell.Admin
   ( Action
   , options
-  , run
+  , main
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
 import Options.Applicative as Options
-import System.Console.Byline as Byline
-
---------------------------------------------------------------------------------
--- Project Imports:
-import Sthenauth.Shell.Command
+import Sthenauth.Core.Account as Account
+import Sthenauth.Lang.Class
+import Sthenauth.Lang.Script (liftByline)
 import Sthenauth.Lang.Sthenauth
 import Sthenauth.Scripts.Admin
-import Sthenauth.Tables.Account as Account
+import Sthenauth.Shell.Command
+import System.Console.Byline as Byline
 
 --------------------------------------------------------------------------------
 -- | Sub-commands and options.
@@ -62,8 +61,8 @@ options = Options.hsubparser $ mconcat
       ]
 
 --------------------------------------------------------------------------------
-run :: Action -> Command ()
-run act =
+main :: Action -> Command ()
+main act =
   case act of
     Promote t -> go t promoteToAdmin
     Demote  t -> go t demoteFromAdmin
@@ -71,7 +70,7 @@ run act =
   where
     go :: Maybe Text -> (AccountId -> Sthenauth ()) -> Command ()
     go mt f =
-      let go' t = liftSthenauth (withAccount t $ \a -> f (Account.pk a))
+      let go' t = liftSthenauth (withAccount t $ \a -> f (accountId a))
       in case mt of
         Just t  ->
           go' t

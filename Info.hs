@@ -15,7 +15,7 @@ License: Apache-2.0
 
 -}
 module Sthenauth.Shell.Info
-  ( run
+  ( main
   ) where
 
 --------------------------------------------------------------------------------
@@ -30,7 +30,7 @@ import Sthenauth.Shell.Options (Options)
 
 --------------------------------------------------------------------------------
 -- | Simple command that dumps the current configuration.
-run :: Options a -> Command ()
-run _ = do
-  cfg <- view config
+main :: Options a -> Command ()
+main _ = do
+  cfg <- currentConfig
   liftIO $ LByteString.putStr (encodePretty cfg)

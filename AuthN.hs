@@ -19,48 +19,48 @@ module Sthenauth.Shell.AuthN
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
+import Data.Time.Clock (getCurrentTime)
+import Sthenauth.Core.CurrentUser
+import Sthenauth.Core.Email
+import Sthenauth.Core.Error
+import Sthenauth.Core.Session (ClearSessionKey(..))
+import Sthenauth.Core.Site as Site
+import Sthenauth.Crypto.Effect
+import Sthenauth.Database.Effect
+import Sthenauth.Lang.Class
+import Sthenauth.Lang.Script (MonadByline(..))
+import Sthenauth.Providers.Local.Login
+import qualified Sthenauth.Scripts as Scripts
+import Sthenauth.Shell.Helpers
+import Sthenauth.Shell.Options as Options
 import System.Console.Byline
 
 --------------------------------------------------------------------------------
--- Project Imports:
-import qualified Sthenauth.Core.AuthN as Core
-import Sthenauth.Lang.Class
-import qualified Sthenauth.Scripts.AuthN as Scripts
-import Sthenauth.Shell.Byline
-import Sthenauth.Shell.Helpers
-import Sthenauth.Shell.Options as Options
-import Sthenauth.Tables.Session (ClearSessionKey(..))
-import Sthenauth.Tables.Site as Site
-import Sthenauth.Types
-
---------------------------------------------------------------------------------
 authenticate
-  :: forall m s r k e a .
+  :: forall sig m a.
      ( MonadIO m
      , MonadByline m
      , MonadSthenauth m
-     , MonadDatabase m
-     , MonadCrypto k m
-     , MonadError e m
-     , AsSystemError e
-     , AsDbError e
-     , MonadState s m
-     , HasCurrentUser s
-     , MonadReader r m
-     , HasSecrets r k
-     , MaybeHasSite r
-     , HasRemote r
+     , Has Database sig m
+     , Has Crypto sig m
+     , Has (State CurrentUser) sig m
+     , Has Error sig m
      )
   => Options a
+  -> Site
   -> m CurrentUser
-authenticate opts =
+authenticate opts site = do
+  rtime <- liftIO getCurrentTime
   case Options.session opts of
-    Just key -> Core.resumeSession (coerce key)
+    Just key -> do
+      user <- currentUserFromSessionKey site rtime (coerce key)
+      put user
+      pure user
     Nothing  -> do
       _ <- login ((,) <$> Options.email opts <*> Options.password opts)
-      -- liftByline $ sayLn ("Your session key is: " <> text (coerce key))
-      use currentUser
+      -- FIXME: Save an encrypted session key in ~/ and reload as necessary
+      get
 
   where
     auth :: Text -> Text -> m ClearSessionKey

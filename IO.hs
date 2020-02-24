@@ -19,26 +19,16 @@ module Sthenauth.Shell.IO
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
 import Control.Exception.Safe (try)
-
---------------------------------------------------------------------------------
--- Project Imports:
-import Sthenauth.Shell.Error
+import Sthenauth.Core.Error
 
 --------------------------------------------------------------------------------
 -- | Run an IO action, catching synchronous exceptions.
-shellIO
-  :: forall e m a.
-  ( MonadIO m
-  , MonadError e m
-  , AsShellError e
-  )
-  => IO a
-  -> m a
+shellIO :: (MonadIO m, Has Error sig m) => IO a -> m a
 shellIO action = do
   result <- liftIO (try action)
 
   case result of
-    Left e  -> throwing _ShellException e
+    Left e  -> throwError (ShellException e)
     Right a -> pure a

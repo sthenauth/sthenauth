@@ -15,27 +15,27 @@ License: Apache-2.0
 
 -}
 module Sthenauth.Shell.Boot
-  ( run
+  ( main
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
-import Control.Monad.Crypto.Cryptonite
+-- Imports:
+import Control.Carrier.Error.Either hiding (Error)
+import Control.Carrier.Lift
+import Control.Monad.Crypto.Cryptonite (fileManager)
 import qualified Control.Monad.Database as DB
 import Options.Applicative
-import System.Exit (die)
-import System.PosixCompat.Files (setFileCreationMask)
-
---------------------------------------------------------------------------------
--- Project Imports:
-import Sthenauth.Lang.Script
+import Sthenauth.CertAuth.Carrier (initCertAuth)
+import Sthenauth.Core.Config
+import Sthenauth.Core.Error
+import Sthenauth.Core.Runtime
+import Sthenauth.Crypto.Carrier (getCryptonite)
 import Sthenauth.Shell.Command
-import Sthenauth.Shell.Error
 import Sthenauth.Shell.Init
 import Sthenauth.Shell.Options (Options, IsCommand(..), parse)
 import qualified Sthenauth.Shell.Options as Options
-import Sthenauth.Types
-import Sthenauth.Types.CertAuthT (initCertAuth)
+import System.Exit (die)
+import System.PosixCompat.Files (setFileCreationMask)
 
 --------------------------------------------------------------------------------
 -- Sub-commands:
@@ -58,33 +58,30 @@ data Commands
   | SiteCommand Site.Actions
 
 --------------------------------------------------------------------------------
+data RunCommandWith
+  = RunIO (IO ())
+  | RunCommand (Command ())
+
+--------------------------------------------------------------------------------
 -- Command line parser for each command.
 instance IsCommand Commands where
-  parseCommand = hsubparser $
-    mconcat [ cmd "admin" "Manage admin accounts" (AdminCommand <$> Admin.options)
-            , cmd "info" "Display evaluated config" (pure InfoCommand)
-            , cmd "init" "Interactive system initialization" (pure InitCommand)
-            , cmd "policy" "Edit site policy settings" (PolicyCommand <$> Policy.options)
-            , cmd "provider" "Manage authentication providers" (ProviderCommand <$> Provider.options)
-            , cmd "server" "Start the HTTP server" (pure ServerCommand)
-            , cmd "site" "Manage site settings" (SiteCommand <$> Site.options)
-            ]
+  parseCommand = hsubparser $ mconcat
+    [ cmd "admin" "Manage admin accounts" (AdminCommand <$> Admin.options)
+    , cmd "info" "Display evaluated config" (pure InfoCommand)
+    , cmd "init" "Interactive system initialization" (pure InitCommand)
+    , cmd "policy" "Edit site policy settings" (PolicyCommand <$> Policy.options)
+    , cmd "provider" "Manage authentication providers" (ProviderCommand <$> Provider.options)
+    , cmd "server" "Start the HTTP server" (pure ServerCommand)
+    , cmd "site" "Manage site settings" (SiteCommand <$> Site.options)
+    ]
     where
       cmd :: String -> String -> Parser a -> Mod CommandFields a
       cmd name desc p = command name (info p (progDesc desc))
 
 --------------------------------------------------------------------------------
-newtype Boot a = Boot
-  { runBoot :: ExceptT ShellError IO a }
-  deriving newtype
-    ( Functor, Applicative, Monad
-    , MonadIO, MonadError ShellError
-    )
-
---------------------------------------------------------------------------------
 -- | Main entry point.
-run :: IO ()
-run = do
+main :: IO ()
+main = do
   -- General process settings:
   void (setFileCreationMask 0o077)
 
@@ -92,53 +89,56 @@ run = do
   options <- enableImplicitOptions <$> parse
 
   -- Generate the initialization commands:
-  (cfg, initcmd) <- runExceptT (runBoot $ boot options) >>= checkOrDie
+  (cfg, initcmd) <-
+    runInit options
+    & runError
+    & runM
+    & (>>= checkOrDie)
 
   -- Initialize the cryptography library:
   keyManager <- fileManager (cfg ^. secretsPath)
-  crypto <- initCryptoniteT keyManager
-
-  -- Initialize the encryption keys:
-  sec <- runExceptT (runCryptoniteT' crypto
-           (initCrypto options cfg keyManager)) >>= checkOrDie
+  crypto <-
+    initCrypto options cfg keyManager
+    & runError
+    & runM
+    & (>>= checkOrDie)
 
   -- Initialize the database.
   db <- DB.initRuntime (cfg ^. database) Nothing
 
-  let renv = Env
-        { _envConfig   = cfg
-        , _envDb       = db
-        , _envCrypto   = crypto
-        , _envSecrets  = sec
-        , _envSite     = Nothing
-        , _envCertAuth = initCertAuth (cfg ^. certAuth) crypto db
+  let renv = Runtime
+        { rtConfig   = cfg
+        , rtDb       = db
+        , rtCrypto   = crypto
+        , rtCertAuth = initCertAuth (cfg ^. certAuth) (getCryptonite crypto)
         }
 
-  let (io, cmd) = dispatch options renv
-  runBootCommand options renv initcmd >>= checkOrDie
-  whenJust cmd (runCommand options renv >=> checkOrDie)
-  io
+  -- Now that we have a fully constructed environment, run the
+  -- post-initialization step.
+  initcmd renv
+    & runError
+    & runM
+    & (>>= checkOrDie)
+
+  case dispatch options renv of
+    RunIO k      -> k
+    RunCommand k -> runCommand options renv k >>= checkOrDie
 
   where
-    checkOrDie :: Either ShellError a -> IO a
+    checkOrDie :: Either BaseError a -> IO a
     checkOrDie (Right a) = pure a
     checkOrDie (Left e)  = die (show e)
 
-    boot :: Options Commands -> Boot (Config, Command ())
-    boot options = do
-      (cfg, cmd) <- runInit options
-      return (cfg, cmd)
-
-    dispatch :: Options Commands -> Env -> (IO (), Maybe (Command ()))
+    dispatch :: Options Commands -> Runtime -> RunCommandWith
     dispatch options renv =
       case Options.command options of
-        AdminCommand o    -> (pass, Just (Admin.run o))
-        InfoCommand       -> (pass, Just (Info.run options))
-        InitCommand       -> (initInteractive options renv, Nothing)
-        PolicyCommand o   -> (pass, Just (Policy.run o))
-        ProviderCommand o -> (pass, Just (Provider.run o))
-        ServerCommand     -> (Server.run options renv, Nothing)
-        SiteCommand o     -> (pass, Just (Site.run o))
+        AdminCommand o    -> RunCommand (Admin.main o)
+        InfoCommand       -> RunCommand (Info.main options)
+        InitCommand       -> RunIO (initInteractive options renv)
+        PolicyCommand o   -> RunCommand (Policy.main o)
+        ProviderCommand o -> RunCommand (Provider.main o)
+        ServerCommand     -> RunIO (Server.main options renv)
+        SiteCommand o     -> RunCommand (Site.main o)
 
 --------------------------------------------------------------------------------
 -- | Some commands imply some of the global options.

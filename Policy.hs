@@ -17,18 +17,16 @@ License: Apache-2.0
 module Sthenauth.Shell.Policy
   ( SubCommand
   , options
-  , run
+  , main
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
 import Options.Applicative as Options
-
---------------------------------------------------------------------------------
--- Project Imports:
-import Sthenauth.Shell.Command
+import Sthenauth.Core.Policy
+import Sthenauth.Lang.Class
 import Sthenauth.Lang.Sthenauth
-import Sthenauth.Types
+import Sthenauth.Shell.Command
 
 --------------------------------------------------------------------------------
 newtype SubCommand
@@ -60,7 +58,7 @@ options = Options.hsubparser $ mconcat
       )
 
 --------------------------------------------------------------------------------
-run :: SubCommand -> Command ()
-run sub = liftSthenauth $
+main :: SubCommand -> Command ()
+main sub = liftSthenauth $
   case sub of
     ChangeAccountCreationTo mode -> modifyPolicy (accountCreation .~ mode)

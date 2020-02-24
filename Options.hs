@@ -22,17 +22,14 @@ module Sthenauth.Shell.Options
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
 import qualified Data.List as List
 import Data.Version (showVersion)
 import Iolaus.Database.Config
 import Options.Applicative
-import System.Environment (getEnvironment)
-
---------------------------------------------------------------------------------
--- Project Imports:
 import qualified Paths_sthenauth as Sthenauth
-import Sthenauth.Types.Config
+import Sthenauth.Core.Config
+import System.Environment (getEnvironment)
 
 --------------------------------------------------------------------------------
 -- | Class for types that can act as a command.
@@ -48,7 +45,7 @@ data Options a = Options
   , config   :: FilePath
   , dbconn   :: Maybe String
   , secrets  :: Maybe FilePath
-  , site     :: Maybe Text
+  , site     :: Text
   , session  :: Maybe Text
   , email    :: Maybe Text
   , password :: Maybe Text
@@ -123,10 +120,11 @@ parser env =
               , help "Resume the session given in STR"
               ]
 
-    optSite :: Parser (Maybe Text)
-    optSite = optional $ option str $
+    optSite :: Parser Text
+    optSite = option str $
       mconcat [ long "site"
               , metavar "STR"
+              , value "localhost"
               , help "Site FQDN, UUID, or alias FQDN"
               ]
 
@@ -134,10 +132,7 @@ parser env =
     envPrefix = "STHENAUTH_"
 
     tryEnv :: String -> Parser String
-    tryEnv key =
-      case List.lookup (envPrefix <> key) env of
-        Nothing -> empty
-        Just v  -> pure v
+    tryEnv key = maybe empty pure (List.lookup (envPrefix <> key) env)
 
     also :: String -> String
     also key = " (also " <> envPrefix <> key <> ")"

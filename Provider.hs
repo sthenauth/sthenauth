@@ -17,23 +17,21 @@ License: Apache-2.0
 module Sthenauth.Shell.Provider
   ( SubCommand
   , options
-  , run
+  , main
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
 import Control.Lens (folded, filtered, firstOf)
-import Control.Monad.Database.Class
 import Iolaus.Database.Query
 import qualified Opaleye as O
 import Options.Applicative as Options
-
---------------------------------------------------------------------------------
--- Project Imports:
+import Sthenauth.Core.Error
+import Sthenauth.Crypto.Effect
+import Sthenauth.Database.Effect
+import Sthenauth.Providers.OIDC.Known as K
+import Sthenauth.Providers.OIDC.Provider
 import Sthenauth.Shell.Command
-import Sthenauth.Tables.Provider.OpenIdConnect as OIDC
-import Sthenauth.Types
-import Sthenauth.Types.OIDC.KnownProvider as K
 
 --------------------------------------------------------------------------------
 data OidcClientInfo = OidcClientInfo
@@ -115,18 +113,19 @@ registerOidcProvider = \case
   FromAltProviders file name oinfo ->
     loadKnownProviders (Just file) >>= go name oinfo
   where
-    go :: Text -> OidcClientInfo -> [KnownProvider] -> Command ()
-    go name oinfo providers =
-     case firstOf (folded.filtered ((== name) . (^. K.providerName))) providers of
-       Nothing -> throwing _UserInputError ("unknown provider: " <> name)
+    go :: Text -> OidcClientInfo -> [Known] -> Command ()
+    go name oinfo ps =
+     case firstOf (folded.filtered ((== name) . (^. K.providerName))) ps of
+       Nothing -> throwUserError (UserInputError ("unknown provider: " <> name))
        Just provider -> createOidcProviderRecord provider oinfo
 
-    createOidcProviderRecord :: KnownProvider -> OidcClientInfo -> Command ()
+    createOidcProviderRecord :: Known -> OidcClientInfo -> Command ()
     createOidcProviderRecord kp oci = do
       safeClientId <- encrypt (oidcClientId oci)
       safeClientSecret <- encrypt (oidcClientSecret oci)
-      let prov = OpenIdConnect
+      let prov = Provider
             { pk           = Nothing
+            , enabled      = toFields True
             , providerName = toFields (kp ^. K.providerName)
             , logoUrl      = O.toNullable (toFields (kp ^. K.logoUrl))
             , oidcUrl      = toFields (kp ^. K.oidcUrl)
@@ -136,10 +135,10 @@ registerOidcProvider = \case
             , updatedAt    = Nothing
             }
       runQuery $ do
-        1 <- insert (Insert providers_openidconnect [prov] rCount Nothing)
+        1 <- insertProviderReturningCount prov
         pass
 
 --------------------------------------------------------------------------------
-run :: SubCommand -> Command ()
-run = \case
+main :: SubCommand -> Command ()
+main = \case
   RegisterOIDC p -> registerOidcProvider p
