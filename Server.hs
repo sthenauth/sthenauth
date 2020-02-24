@@ -15,28 +15,25 @@ License: Apache-2.0
 
 -}
 module Sthenauth.API.Server
-  ( run
+  ( main
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
 import qualified Data.Vault.Lazy as Vault
 import qualified Network.Wai as Wai
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Network.Wai.Handler.WarpTLS as Warp
+import qualified Paths_sthenauth as Sthenauth
 import Servant.API
 import Servant.Server
 import Servant.Server.StaticFiles (serveDirectoryFileServer)
-
---------------------------------------------------------------------------------
--- Project Imports:
-import qualified Paths_sthenauth as Sthenauth
 import Sthenauth.API.Handlers
 import Sthenauth.API.Log
 import Sthenauth.API.Middleware
 import Sthenauth.API.Monad
-import Sthenauth.Lang.Script hiding (env)
-import Sthenauth.Types.CertAuthT (serverSettingsForTLS)
+import Sthenauth.CertAuth.TLS (serverSettingsForTLS)
+import Sthenauth.Core.Runtime
 
 --------------------------------------------------------------------------------
 -- | The final API which includes a file server for the UI files.
@@ -54,12 +51,12 @@ finalapi = Proxy
 
 --------------------------------------------------------------------------------
 -- | A server for the 'Sthenauth' API.
-apiServer :: Env -> Client -> Logger -> Server API
+apiServer :: Runtime -> Client -> Logger -> Server API
 apiServer env client logger = hoistServer api (runRequest env client logger) app
 
 --------------------------------------------------------------------------------
 -- | A server for the final API.
-server :: Env -> Vault.Key Client -> Logger -> FilePath -> Server FinalAPI
+server :: Runtime -> Vault.Key Client -> Logger -> FilePath -> Server FinalAPI
 server env key logger path vault =
   case Vault.lookup key vault of
     Nothing     -> error "shouldn't happen"
@@ -72,13 +69,13 @@ server env key logger path vault =
 
 --------------------------------------------------------------------------------
 -- | Run the actual web server.
-run :: Env -> IO ()
-run e = do
+main :: Runtime -> IO ()
+main env = do
   path <- Sthenauth.getDataDir
   rkey <- Vault.newKey
 
   withLogger (fmap fst . Vault.lookup rkey . Wai.vault) $ \logger -> do
     let settings = Warp.defaultSettings & Warp.setPort 3001
-        server'  = serve finalapi (server e rkey logger (path </> "www"))
-    tls <- serverSettingsForTLS (e ^. envCertAuth)
+        server'  = serve finalapi (server env rkey logger (path </> "www"))
+    tls <- serverSettingsForTLS env
     Warp.runTLS tls settings (middleware rkey logger server')

@@ -19,42 +19,59 @@ module Sthenauth.API.Monad
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
+import Control.Carrier.Database hiding (Runtime)
+import Control.Carrier.Error.Either (runError)
+import Control.Carrier.Lift
+import Control.Monad.Except (throwError)
 import Servant.Server
-
---------------------------------------------------------------------------------
--- Project Imports:
 import Sthenauth.API.Log
 import Sthenauth.API.Middleware (Client)
-import Sthenauth.Lang.Script
+import Sthenauth.Core.CurrentUser
+import Sthenauth.Core.Error hiding (throwError)
+import Sthenauth.Core.Remote
+import Sthenauth.Core.Runtime
+import Sthenauth.Core.Site as Site
+import Sthenauth.Crypto.Carrier hiding (Runtime)
 import Sthenauth.Lang.Class
+import Sthenauth.Lang.Script
 import Sthenauth.Lang.Sthenauth (Sthenauth)
-import Sthenauth.Types
-import Sthenauth.Tables.Site as Site
 
 --------------------------------------------------------------------------------
 -- | Execute a 'Sthenauth' action, producing a Servant @Handler@.
 runRequest
-  :: forall a. Env
+  :: Runtime
   -> Client
   -> Logger
   -> Sthenauth a
   -> Handler a
-runRequest e client l s =
-  liftIO (runScript (Runtime e (fst client)) enter) >>= \case
-    Right (a, store') -> leave a store'
+runRequest env client l s = do
+  site <- findSiteFromRequest
+  cu <- findCurrentUser site
+
+  liftIO (runScript env site (fst client) cu (liftSthenauth s)) >>= \case
+    Right (_, a) -> pure a
     Left  e' -> do
       liftIO (logger_error l (fst client) (show e' :: Text))
       throwError (toServerError e')
 
   where
-    -- Prepare and then execute the request.
-    enter :: Script a
-    enter = withSite (Just (fst client ^. requestFqdn)) $ do
-      sid <- whenNothingM (Site.pk <<$>> view envSite) (throwing _MissingSiteError ())
-      whenJust (snd client) (currentUserFromSessionKey sid >=> assign storeUser)
-      liftSthenauth s
+    findSiteFromRequest :: Handler Site
+    findSiteFromRequest
+      = siteFromFQDN (client ^. _1.requestFqdn)
+      & runDatabase (rtDb env)
+      & runError
+      & runM
+      & (>>= either (throwError . toServerError) pure)
 
-    -- Actions to run after the request is done.
-    leave :: a -> Store -> Handler a
-    leave a _ = pure a
+    findCurrentUser :: Site -> Handler CurrentUser
+    findCurrentUser site =
+      case client ^. _2 of
+        Nothing -> pure notLoggedIn
+        Just session ->
+          currentUserFromSessionKey site (client ^. _1.requestTime) session
+          & runDatabase (rtDb env)
+          & runCrypto (rtCrypto env)
+          & runError
+          & runM
+          & (>>= either (\(_ :: BaseError) -> pure notLoggedIn) pure)

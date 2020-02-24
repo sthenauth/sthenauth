@@ -21,18 +21,17 @@ module Sthenauth.API.Handlers
 
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
 import qualified Data.Aeson as Aeson
 import Servant.API
 import Servant.Server
-import Web.Cookie (SetCookie)
-
---------------------------------------------------------------------------------
--- Project Imports:
+import Sthenauth.Core.Capabilities
+import Sthenauth.Core.JWK
+import Sthenauth.Core.Session (resetSessionCookie, makeSessionCookie)
 import Sthenauth.Lang.Sthenauth
+import Sthenauth.Providers.Local.Login
 import Sthenauth.Scripts
-import Sthenauth.Types
-import Sthenauth.Tables.Session (resetSessionCookie, makeSessionCookie)
+import Web.Cookie (SetCookie)
 
 --------------------------------------------------------------------------------
 -- | Respond to a @ping@.

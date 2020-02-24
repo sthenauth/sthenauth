@@ -20,23 +20,22 @@ module Sthenauth.API.Middleware
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
 import Data.List (lookup)
 import Data.Time.Clock (getCurrentTime)
 import qualified Data.Vault.Lazy as Vault
 import qualified Network.HTTP.Types.Header as HTTP
 import qualified Network.Socket as Net
 import qualified Network.Wai as Wai
-
---------------------------------------------------------------------------------
--- Project Imports:
 import Sthenauth.API.Log
-import Sthenauth.Tables.Session (ClearSessionKey(..))
-import Sthenauth.Types
+import Sthenauth.Core.Address
+import Sthenauth.Core.CurrentUser
+import Sthenauth.Core.Remote
+import Sthenauth.Core.Session (ClearSessionKey(..))
 
 --------------------------------------------------------------------------------
 -- | Details about a client:
-type Client = (Remote , Maybe ClearSessionKey)
+type Client = (Remote, Maybe ClearSessionKey)
 
 --------------------------------------------------------------------------------
 -- | A middleware that creates a 'Remote' value and stores it into the

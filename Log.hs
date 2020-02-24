@@ -20,18 +20,16 @@ module Sthenauth.API.Log
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
 import Control.Exception (bracket)
 import qualified Data.Aeson as Aeson
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import qualified Data.UUID as UUID
 import Network.HTTP.Types.Status
 import Network.Wai
+import Sthenauth.Core.Address
+import Sthenauth.Core.Remote
 import System.Log.FastLogger
-
---------------------------------------------------------------------------------
--- Project Imports:
-import Sthenauth.Types
 
 --------------------------------------------------------------------------------
 -- | Various loggers.
