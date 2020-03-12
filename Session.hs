@@ -31,6 +31,7 @@ module Sthenauth.Core.Session
   , newSessionKey
   , recordSessionActivity
 
+  , issueSession
   , newSession
   , insertSession
   , deleteSession
@@ -53,14 +54,15 @@ import Iolaus.Database.JSON (liftJSON)
 import Iolaus.Database.Query
 import Iolaus.Database.Table
 import qualified Opaleye as O
-import Web.Cookie
-
---------------------------------------------------------------------------------
--- Project Imports:
 import Sthenauth.Core.Account
+import Sthenauth.Core.Error
 import Sthenauth.Core.Policy
+import Sthenauth.Core.PostLogin
 import Sthenauth.Core.Remote
+import Sthenauth.Core.Site
 import Sthenauth.Crypto.Effect
+import Sthenauth.Database.Effect
+import Web.Cookie
 
 --------------------------------------------------------------------------------
 -- | Wrapper around signed JSON web tokens.
@@ -170,6 +172,28 @@ newSession account remote policy key = Session
   , sessionAccountId  = toFields account
   , sessionRemote     = toFields remote
   }
+
+--------------------------------------------------------------------------------
+-- Issue a brand new session to the given account.
+issueSession
+  :: ( Has Database sig m
+     , Has Crypto   sig m
+     , Has Error    sig m
+     )
+  => Site
+  -> Remote
+  -> Account
+  -> m (Session, ClearSessionKey, PostLogin)
+issueSession site remote acct = do
+  (clear, key) <- newSessionKey
+
+  let sessionW = newSession (accountId acct) remote (sitePolicy site) key
+      query = insertSession (sitePolicy site ^. maxSessionsPerAccount) sessionW
+      plogin = postLogin site
+
+  transaction query >>= \case
+    Nothing -> throwError (RuntimeError "failed to create a session")
+    Just session -> return (session, clear, plogin)
 
 --------------------------------------------------------------------------------
 -- | Try to insert a single session into the database.

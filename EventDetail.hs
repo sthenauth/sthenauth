@@ -22,7 +22,6 @@ module Sthenauth.Core.EventDetail
 -- Imports:
 import Iolaus.Database.JSON (liftJSON)
 import Sthenauth.Core.PostLogin
-import Sthenauth.Providers.Local.Login
 
 --------------------------------------------------------------------------------
 -- | Specific information about an event.
@@ -33,7 +32,7 @@ data EventDetail
     }
 
   | EventFailedLogin -- ^ Someone failed to login.
-    { attemptedLogin :: SafeLogin
+    { attemptedLogin :: Secret Text
       -- ^ The username (or email address) given for the login.
 
     , attemptedAccountId :: Maybe UUID

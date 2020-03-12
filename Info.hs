@@ -17,7 +17,8 @@ License: Apache-2.0
 
 -}
 module Sthenauth.Core.Info
-  ( getSitePrivateKeys
+  ( getSitePublicKeys
+  , getSiteCapabilities
   ) where
 
 --------------------------------------------------------------------------------
@@ -25,16 +26,19 @@ module Sthenauth.Core.Info
 import qualified Crypto.JOSE.JWK as JOSE
 import Iolaus.Database.Query
 import qualified Opaleye as O
-import Sthenauth.Crypto.Effect
-import Sthenauth.Database.Effect
-import Sthenauth.Core.Site as Site
+import Sthenauth.Core.Capabilities
+import Sthenauth.Core.Config (Config)
 import Sthenauth.Core.Error
 import Sthenauth.Core.JWK (getJWK)
+import Sthenauth.Core.Site as Site
+import Sthenauth.Crypto.Effect
+import Sthenauth.Database.Effect
+import Sthenauth.Providers.OIDC.Public as OIDC
 
 --------------------------------------------------------------------------------
 -- | Fetch all active public keys for the given site and wrap them
 -- into a key set.
-getSitePrivateKeys
+getSitePublicKeys
   :: forall m sig.
      ( Has Database sig m
      , Has Crypto   sig m
@@ -42,7 +46,7 @@ getSitePrivateKeys
      )
   => SiteId
   -> m JOSE.JWKSet
-getSitePrivateKeys sid = do
+getSitePublicKeys sid = do
     jwks <- runQuery (select query) >>= mapM prepKey
     pure (JOSE.JWKSet $ catMaybes jwks)
 
@@ -53,3 +57,15 @@ getSitePrivateKeys sid = do
     prepKey :: SiteKey -> m (Maybe JOSE.JWK)
     prepKey k = (^. JOSE.asPublicKey) . getJWK <$>
       decrypt (keyData k)
+
+--------------------------------------------------------------------------------
+-- | Get the capabilities for a site.
+getSiteCapabilities
+  :: ( Has Database sig m
+     , Has Error    sig m
+     )
+  => Config
+  -> Site
+  -> m Capabilities
+getSiteCapabilities config site =
+  toCapabilities config (sitePolicy site) <$> OIDC.publicProviders

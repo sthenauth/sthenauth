@@ -46,7 +46,7 @@ data UserError
   = MustAuthenticateError
   | WeakPasswordError Zxcvbn.Score
   | MustChangePasswordError
-  | AuthenticationFailedError
+  | AuthenticationFailedError (Maybe UUID)
   | UserInputError Text
   | InvalidUsernameOrEmailError
   | AccountAlreadyExistsError
@@ -73,6 +73,7 @@ data BaseError
   | OidcDiscoveryError Text
   | OidcRedirectError Text
   | RuntimeError Text
+  | HttpException SomeException
   | ShellException SomeException
   deriving stock (Generic, Show)
   deriving anyclass Exception
@@ -106,7 +107,7 @@ toServerError = \case
         MustAuthenticateError       -> mkSE e Servant.err401
         WeakPasswordError _         -> mkSE e Servant.err400
         MustChangePasswordError     -> mkSE e Servant.err400
-        AuthenticationFailedError   -> mkSE e Servant.err401
+        AuthenticationFailedError _ -> mkSE e Servant.err401
         UserInputError _            -> mkSE e Servant.err400
         InvalidUsernameOrEmailError -> mkSE e Servant.err400
         AccountAlreadyExistsError   -> mkSE e Servant.err400

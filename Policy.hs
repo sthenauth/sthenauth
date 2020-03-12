@@ -41,6 +41,7 @@ module Sthenauth.Core.Policy
   , sessionExpire
   , sessionInactive
   , openLocalAccountCreation
+  , assertPolicyRules
   , zxcvbnConfig
   ) where
 
@@ -53,6 +54,7 @@ import qualified Data.Map as Map
 import Data.Time.Clock
 import Iolaus.Database.JSON (liftJSON)
 import Iolaus.Validation
+import Sthenauth.Core.Error
 import qualified Text.Password.Strength as Zxcvbn
 import qualified Text.Password.Strength.Config as Zxcvbn
 
@@ -347,6 +349,14 @@ openLocalAccountCreation p =
    AdminInvitation -> False
    SelfService     -> True
    OnlyFromOIDC    -> False
+
+--------------------------------------------------------------------------------
+-- | Evaluate the given policy rules and abort if any of them fail.
+assertPolicyRules
+  :: Has Error sig m
+  => Policy -> [Policy -> Bool] -> m ()
+assertPolicyRules policy rules =
+  unless (all ($ policy) rules) (throwUserError PermissionDenied)
 
 --------------------------------------------------------------------------------
 -- | Access the zxcvbn configuration.

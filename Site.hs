@@ -43,6 +43,7 @@ module Sthenauth.Core.Site
   , insertSite
   , updateSite
   , insertAlias
+  , sessionCookieName
   ) where
 
 --------------------------------------------------------------------------------
@@ -451,3 +452,8 @@ updateSite sid ui = do
             , siteIsDefault     = fromMaybe (toFields False) (siteIsDefault site)
             })
       }
+
+--------------------------------------------------------------------------------
+-- | FIXME: make this a site parameter.
+sessionCookieName :: Site -> Text
+sessionCookieName _ = "ss"

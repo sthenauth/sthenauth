@@ -21,8 +21,9 @@ module Sthenauth.Core.Event
   , Event
   , EventId
   , eventId
+  , fireEvents
   , newEvent
-  , insertEvent
+  , insertEvents
   ) where
 
 --------------------------------------------------------------------------------
@@ -30,9 +31,12 @@ module Sthenauth.Core.Event
 import Iolaus.Database.Query
 import Iolaus.Database.Table
 import qualified Opaleye as O
-import Sthenauth.Core.Account (AccountId)
+import Sthenauth.Core.Account (AccountId, accountId)
+import Sthenauth.Core.CurrentUser
+import Sthenauth.Core.Error
 import Sthenauth.Core.EventDetail
 import Sthenauth.Core.Remote (Remote)
+import Sthenauth.Database.Effect
 
 --------------------------------------------------------------------------------
 -- | Primary key for the @events@ table.
@@ -70,19 +74,33 @@ makeTable ''EventF "events"
 type Event = EventF ForHask
 
 --------------------------------------------------------------------------------
-newEvent :: Maybe AccountId -> Remote -> EventDetail -> EventF SqlWrite
-newEvent a r d = Event
+-- | Record a series of events.
+fireEvents
+  :: ( Has Database sig m
+     , Has Error sig m
+     )
+  => CurrentUser
+  -> Remote
+  -> [EventDetail]
+  -> m ()
+fireEvents user remote details = do
+  let es = map (newEvent user remote) details
+  void (transaction (insertEvents es))
+
+--------------------------------------------------------------------------------
+newEvent :: CurrentUser -> Remote -> EventDetail -> EventF SqlWrite
+newEvent user r d = Event
   { pk        = Nothing
   , createdAt = Nothing
-  , actorId   = O.maybeToNullable (toFields <$> a)
+  , actorId   = O.maybeToNullable (toFields . accountId <$> toAccount user)
   , remote    = toFields r
   , detail    = toFields d
   }
 
 --------------------------------------------------------------------------------
 -- | Try to insert a single event into the database.
-insertEvent :: EventF SqlWrite -> Query (Maybe EventId)
-insertEvent = insert1 . ins
+insertEvents :: [EventF SqlWrite] -> Query Int64
+insertEvents = insert . ins
   where
-    ins :: EventF SqlWrite -> Insert [EventId]
-    ins e = Insert events [e] (rReturning pk) Nothing
+    ins :: [EventF SqlWrite] -> Insert Int64
+    ins es = Insert events es rCount Nothing
