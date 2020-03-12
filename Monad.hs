@@ -27,15 +27,13 @@ import Control.Monad.Except (throwError)
 import Servant.Server
 import Sthenauth.API.Log
 import Sthenauth.API.Middleware (Client)
+import Sthenauth.Core.Action
 import Sthenauth.Core.CurrentUser
 import Sthenauth.Core.Error hiding (throwError)
 import Sthenauth.Core.Remote
 import Sthenauth.Core.Runtime
 import Sthenauth.Core.Site as Site
 import Sthenauth.Crypto.Carrier hiding (Runtime)
-import Sthenauth.Lang.Class
-import Sthenauth.Lang.Script
-import Sthenauth.Lang.Sthenauth (Sthenauth)
 
 --------------------------------------------------------------------------------
 -- | Execute a 'Sthenauth' action, producing a Servant @Handler@.
@@ -43,13 +41,13 @@ runRequest
   :: Runtime
   -> Client
   -> Logger
-  -> Sthenauth a
+  -> Action Handler a
   -> Handler a
 runRequest env client l s = do
   site <- findSiteFromRequest
   cu <- findCurrentUser site
 
-  liftIO (runScript env site (fst client) cu (liftSthenauth s)) >>= \case
+  runAction env site (fst client) cu s >>= \case
     Right (_, a) -> pure a
     Left  e' -> do
       liftIO (logger_error l (fst client) (show e' :: Text))

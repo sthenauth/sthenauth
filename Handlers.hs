@@ -22,64 +22,129 @@ module Sthenauth.API.Handlers
 
 --------------------------------------------------------------------------------
 -- Imports:
-import qualified Data.Aeson as Aeson
+import qualified Control.Monad.Except as CME
+import Data.ByteString.Builder (toLazyByteString)
 import Servant.API
 import Servant.Server
+import Sthenauth.Core.Action
+import Sthenauth.Core.AuthN
 import Sthenauth.Core.Capabilities
+import Sthenauth.Core.CurrentUser
+import Sthenauth.Core.Info
 import Sthenauth.Core.JWK
-import Sthenauth.Core.Session (resetSessionCookie, makeSessionCookie)
-import Sthenauth.Lang.Sthenauth
+import Sthenauth.Core.PostLogin
+import qualified Sthenauth.Core.Public as Public
+import Sthenauth.Core.Site (siteId)
+import Sthenauth.Core.URL
 import Sthenauth.Providers.Local.Login
-import Sthenauth.Scripts
-import Web.Cookie (SetCookie)
-
---------------------------------------------------------------------------------
--- | Respond to a @ping@.
--- FIXME: Replace with an endpoint for fetching session details such
--- as the time the session will become inactive.
-data Pong = Pong
-
-instance ToJSON Pong where
-  toJSON _ = Aeson.object [ "response" Aeson..= ("pong" :: Text) ]
+import Web.Cookie
 
 --------------------------------------------------------------------------------
 -- | Type used when setting a cookie.
-type SC a = Headers '[Header "Set-Cookie" SetCookie] a
-type SCU = SC ()
+type Cookie a = Headers '[Header "Set-Cookie" SetCookie] a
+
+--------------------------------------------------------------------------------
+type GetKeys
+  = "keys"
+  :> Get '[JSON] JWKSet
+
+--------------------------------------------------------------------------------
+type GetCapabilities
+  = "capabilities"
+  :> Get '[JSON] Capabilities
+
+--------------------------------------------------------------------------------
+type GetSession
+  = "session"
+  :> Get '[JSON] Public.Session
+
+--------------------------------------------------------------------------------
+type CreateLocalAccount
+  = "create"
+  :> ReqBody '[JSON] Credentials
+  :> Post '[JSON] (Cookie PostLogin)
+
+--------------------------------------------------------------------------------
+type LocalLogin
+  = "login"
+  :> ReqBody '[JSON] Credentials
+  :> Post '[JSON] (Cookie PostLogin)
+
+--------------------------------------------------------------------------------
+type GlobalLogout
+  = "logout"
+  :> Delete '[JSON] (Cookie ())
 
 --------------------------------------------------------------------------------
 -- | Servant API type.
-type API = "keys" :> Get '[JSON] JWKSet
-      :<|> "capabilities" :> Get '[JSON] Capabilities
-      :<|> "create" :> ReqBody '[JSON] Credentials :> Post '[JSON] (SC PostLogin)
-      :<|> "login" :> ReqBody '[JSON] Credentials :> Post '[JSON] (SC PostLogin)
-      :<|> "logout" :> Delete '[JSON] SCU
-      :<|> "ping" :> Get '[JSON] Pong
+type API = GetKeys
+      :<|> GetCapabilities
+      :<|> GetSession
+      :<|> LocalLogin
+      :<|> GlobalLogout
+      :<|> CreateLocalAccount
 
 --------------------------------------------------------------------------------
--- | Handlers for the @API@ type, running in the 'Sthenauth' monad.
-app :: ServerT API Sthenauth
-app =  activeSiteKeys
-  :<|> getCapabilities
-  :<|> maybeCreateNewLocalAccount
-  :<|> maybeAuthenticate
-  :<|> logoutAndDeleteCookie
-  :<|> handlePing
+-- | Handlers for the @API@ type.
+app :: ServerT API (Action Handler)
+app = getKeys
+ :<|> getCapabilities
+ :<|> getSession
+ :<|> localLogin
+ :<|> globalLogout
+ :<|> createLocalAccount
 
-  where
-    maybeAuthenticate :: Credentials -> Sthenauth (SC PostLogin)
-    maybeAuthenticate c = do
-      (session, clear, postLogin) <- authenticate c
-      return $ addHeader (makeSessionCookie "ss" clear session) postLogin
+--------------------------------------------------------------------------------
+getKeys :: ServerT GetKeys (Action Handler)
+getKeys = do
+  site <- asks currentSite
+  getSitePublicKeys (siteId site)
 
-    logoutAndDeleteCookie :: Sthenauth SCU
-    logoutAndDeleteCookie =
-      logout >> return (addHeader (resetSessionCookie "ss") ())
+--------------------------------------------------------------------------------
+getCapabilities :: ServerT GetCapabilities (Action Handler)
+getCapabilities = do
+  site <- asks currentSite
+  cfg  <- asks currentConfig
+  getSiteCapabilities cfg site
 
-    maybeCreateNewLocalAccount :: Credentials -> Sthenauth (SC PostLogin)
-    maybeCreateNewLocalAccount c = do
-      (session, clear, postLogin) <- createNewLocalAccount c
-      return $ addHeader (makeSessionCookie "ss" clear session) postLogin
+--------------------------------------------------------------------------------
+getSession :: ServerT GetSession (Action Handler)
+getSession = fmap sessionFromCurrentUser get >>= \case
+  Nothing -> lift (CME.throwError err401)
+  Just s  -> pure (Public.toSession s)
 
-    handlePing :: Sthenauth Pong
-    handlePing = withValidUser $ \_ -> return Pong
+--------------------------------------------------------------------------------
+localLogin :: ServerT LocalLogin (Action Handler)
+localLogin = executeAuthN . LoginWithLocalCredentials
+
+--------------------------------------------------------------------------------
+globalLogout :: ServerT GlobalLogout (Action Handler)
+globalLogout = do
+  site <- asks currentSite
+  remote <- asks currentRemote
+  cookie <- logout site remote
+  pure (addHeader cookie ())
+
+--------------------------------------------------------------------------------
+createLocalAccount :: ServerT CreateLocalAccount (Action Handler)
+createLocalAccount = executeAuthN . CreateLocalAccountWithCredentials
+
+--------------------------------------------------------------------------------
+executeAuthN :: RequestAuthN -> Action Handler (Cookie PostLogin)
+executeAuthN req = do
+  site <- asks currentSite
+  remote <- asks currentRemote
+  requestAuthN site remote req >>= \case
+    LoggedIn cookie postLogin -> pure (addHeader cookie postLogin)
+    NextStep step -> lift (processNextStep step)
+
+--------------------------------------------------------------------------------
+processNextStep :: AdditionalStep -> Handler a
+processNextStep = \case
+  RedirectTo url cookie ->
+    CME.throwError $ err302
+      { errHeaders =
+          [ ("Location",   urlToByteString url)
+          , ("Set-Cookie", toStrict (toLazyByteString (renderSetCookie cookie)))
+          ]
+      }
