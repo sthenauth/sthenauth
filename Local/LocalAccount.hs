@@ -1,3 +1,5 @@
+{-# LANGUAGE Arrows #-}
+
 {-|
 
 Copyright:
@@ -17,7 +19,10 @@ License: Apache-2.0
 module Sthenauth.Providers.Local.LocalAccount
   ( LocalAccount(..)
   , toLocalAccount
+  , insertLocalAccount
   , insertLocalAccountQuery
+  , doesAccountExist
+  , getAccountFromLogin
   ) where
 
 --------------------------------------------------------------------------------
@@ -27,10 +32,12 @@ import Iolaus.Database.Table (getKey)
 import Opaleye (toFields, toNullable)
 import qualified Opaleye as O
 import Sthenauth.Core.Account as Account
-import Sthenauth.Core.Email (toSafeEmail)
+import Sthenauth.Core.Email (toSafeEmail, getEmail)
+import Sthenauth.Core.Error
 import Sthenauth.Core.Site as Site
 import Sthenauth.Core.Username (getUsername)
 import Sthenauth.Crypto.Effect
+import Sthenauth.Database.Effect
 import Sthenauth.Providers.Local.Login (Login, getLogin)
 
 --------------------------------------------------------------------------------
@@ -91,6 +98,16 @@ toLocalAccount sid login passwd =
             ]
 
 --------------------------------------------------------------------------------
+insertLocalAccount
+  :: (Has Database sig m, Has Error sig m)
+  => LocalAccount SqlWrite
+  -> m Account
+insertLocalAccount localAcct =
+  transactionEither (insertLocalAccountQuery localAcct) >>= \case
+    Left _  -> throwUserError AccountAlreadyExistsError
+    Right a -> pure a
+
+--------------------------------------------------------------------------------
 -- | A query that will insert a local account into the database,
 -- returning the new account.
 insertLocalAccountQuery
@@ -98,3 +115,50 @@ insertLocalAccountQuery
   -> Query Account
 insertLocalAccountQuery LocalAccount{..} =
   createAccount accountM emailM
+
+--------------------------------------------------------------------------------
+doesAccountExist
+  :: ( Has Database sig m
+     , Has Crypto   sig m
+     , Has Error    sig m
+     )
+  => SiteId
+  -> Login
+  -> m Bool
+doesAccountExist sid l = do
+  query <- accountByLogin sid l
+  runQuery (count query <&> (/= 0))
+
+--------------------------------------------------------------------------------
+getAccountFromLogin
+  :: ( Has Database sig m
+     , Has Crypto   sig m
+     , Has Error    sig m
+     )
+  => SiteId
+  -> Login
+  -> m (Maybe Account)
+getAccountFromLogin sid l = do
+  query <- accountByLogin sid l
+  runQuery (select1 query)
+
+--------------------------------------------------------------------------------
+accountByLogin
+  :: Has Crypto sig m
+  => SiteId
+  -> Login
+  -> m (O.Query (AccountF SqlRead))
+accountByLogin sid l =
+  case getLogin l of
+    Left  u -> pure $ query (findAccountByUsername u)
+    Right e -> query . findAccountByEmail <$> toSaltedHash (getEmail e)
+
+  where
+    -- Restrict the accounts table then run a sub-query.
+    query
+      :: O.SelectArr (AccountF SqlRead) (AccountF SqlRead)
+      -> O.Select (AccountF SqlRead)
+    query sub = proc () -> do
+      t1 <- fromAccounts -< ()
+      O.restrict -< accountSiteId t1 .== O.toFields sid
+      sub -< t1

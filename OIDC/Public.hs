@@ -31,6 +31,7 @@ import Iolaus.Database.Query
 import Iolaus.Database.Table (getKey)
 import qualified Opaleye as O
 import Sthenauth.Core.Error
+import Sthenauth.Core.URL
 import Sthenauth.Database.Effect
 import qualified Sthenauth.Providers.OIDC.Provider as OIDC
 
@@ -39,7 +40,7 @@ import qualified Sthenauth.Providers.OIDC.Provider as OIDC
 data Public = Public
   { _providerId   :: UUID
   , _providerName :: Text
-  , _logoUrl      :: Maybe Text
+  , _logoUrl      :: Maybe URL
   }
   deriving stock (Generic, Show)
   deriving (ToJSON, FromJSON) via GenericJSON Public

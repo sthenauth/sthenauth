@@ -18,27 +18,25 @@ module Sthenauth.Providers.OIDC.Known
   ( Known
   , providerName
   , logoUrl
-  , oidcUrl
+  , discoveryUrl
   , registerUrl
   , loadKnownProviders
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
 import Control.Lens.TH (makeLenses)
 import qualified Data.Yaml as YAML
-
---------------------------------------------------------------------------------
--- Package Imports:
 import qualified Paths_sthenauth as Sthenauth
+import Sthenauth.Core.URL
 
 --------------------------------------------------------------------------------
 -- | Information about a well know OIDC provider.
 data Known = Known
   { _providerName :: Text
-  , _logoUrl      :: Text
-  , _oidcUrl      :: Text
-  , _registerUrl  :: Text -- ^ Where you register for an account.
+  , _logoUrl      :: URL
+  , _discoveryUrl :: URL
+  , _registerUrl  :: URL -- ^ Where you register for an account.
   }
   deriving stock Generic
   deriving (ToJSON, FromJSON) via GenericJSON Known

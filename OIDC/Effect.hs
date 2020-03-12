@@ -20,12 +20,6 @@ module Sthenauth.Providers.OIDC.Effect
   , getRedirectUrl
   -- , getEmailToken
 
-  , Details(..)
-
-  -- , EmailToken
-  -- , EmailClaim(..)
-  -- , tokenSubject
-
     -- * Re-exports
   , Algebra
   , Effect
@@ -39,27 +33,21 @@ import Network.URI (URI)
 import Sthenauth.Core.Session (ClearSessionKey)
 import Sthenauth.Core.Site (Site)
 import Sthenauth.Providers.OIDC.Provider
-import Sthenauth.Providers.OIDC.Session
-import qualified Web.OIDC.Client as WebOIDC
 
---------------------------------------------------------------------------------
-newtype Details = Details (Provider, WebOIDC.OIDC)
-
---------------------------------------------------------------------------------
 data OIDC m k
-  = ProviderDiscovery Site Provider (Details -> m k)
-  | GetRedirectUrl ClearSessionKey Partial Details (URI -> m k)
+  = ProviderDiscovery Site Provider (() -> m k)
+  | GetRedirectUrl ClearSessionKey (URI -> m k)
   -- | GetEmailToken Partial Details (EmailToken -> m k)
   deriving stock (Generic1, Functor)
   deriving anyclass (HFunctor, Effect)
 
 --------------------------------------------------------------------------------
-providerDiscovery :: Has OIDC sig m => Site -> Provider -> m Details
+providerDiscovery :: Has OIDC sig m => Site -> Provider -> m ()
 providerDiscovery s p = send (ProviderDiscovery s p pure)
 
 --------------------------------------------------------------------------------
-getRedirectUrl :: Has OIDC sig m => ClearSessionKey -> Partial -> Details -> m URI
-getRedirectUrl c p d = send (GetRedirectUrl c p d pure)
+getRedirectUrl :: Has OIDC sig m => ClearSessionKey -> m URI
+getRedirectUrl c = send (GetRedirectUrl c  pure)
 
 --------------------------------------------------------------------------------
 -- getEmailToken :: Has OIDC sig m => Partial -> Details -> m EmailToken

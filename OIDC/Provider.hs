@@ -22,6 +22,9 @@ module Sthenauth.Providers.OIDC.Provider
   ( ProviderF(..)
   , Provider
   , ProviderId
+  , ProviderPassword(..)
+  , fetchDiscoveryDocument
+  , fetchProviderKeys
   , fromProviders
   , insertProviderReturningCount
   , providerById
@@ -29,13 +32,27 @@ module Sthenauth.Providers.OIDC.Provider
 
 --------------------------------------------------------------------------------
 import Control.Arrow (returnA)
+import Crypto.JOSE (JWKSet)
+import Data.Binary (Binary)
+import Iolaus.Database.JSON
 import Iolaus.Database.Query
 import Iolaus.Database.Table
 import qualified Opaleye as O
+import OpenID.Connect.Client.Provider (Discovery, discovery, keysFromDiscovery)
+import Sthenauth.Core.Error
+import Sthenauth.Core.HTTP
+import Sthenauth.Core.URL
 
 --------------------------------------------------------------------------------
 -- | The primary key on the OpenID Connect providers table.
 type ProviderId = Key UUID ProviderF
+
+--------------------------------------------------------------------------------
+data ProviderPassword
+  = ProviderPlainPassword Text
+  | ProviderPasswordAssertion Text
+  deriving stock Generic
+  deriving anyclass Binary
 
 --------------------------------------------------------------------------------
 data ProviderF f = Provider
@@ -48,17 +65,29 @@ data ProviderF f = Provider
   , providerName :: Col f "provider_name" Text SqlText Required
     -- ^ The display name of the remote provider.
 
-  , providerLogoUrl :: Col f "logo_url" Text SqlText Nullable
+  , providerLogoUrl :: Col f "logo_url" URL SqlText Nullable
     -- ^ A URL where a logo for the provider can be fetched from.
 
-  , providerOidcUrl :: Col f "oidc_url" Text SqlText Required
-    -- ^ The URL where OIDC connects begin (Issuer Location).
-
-  , providerClientId :: Col f "client_id" (Secret ByteString) SqlJsonb Required
+  , providerClientId :: Col f "client_id" Text SqlText Required
     -- ^ The client ID issued by the provider.
 
-  , providerClientSecret :: Col f "client_secret" (Secret ByteString) SqlJsonb Required
+  , providerClientSecret :: Col f "client_secret" (Secret ProviderPassword) SqlJsonb Required
     -- ^ Shared secret issued by the provider.
+
+  , providerDiscoveryUrl :: Col f "discovery_url" URL SqlText Required
+    -- ^ The provider's OIDC Discovery URL.
+
+  , providerDiscoveryDoc :: Col f "discovery_doc" (LiftJSON Discovery) SqlJsonb Required
+    -- ^ The provider's discovery document.
+
+  , providerDiscoveryExpiresAt :: Col f "discovery_expires_at" UTCTime SqlTimestamptz Optional
+    -- ^ The time the cached discovery document will expire.
+
+  , providerJwkSet :: Col f "jwk_set" (LiftJSON JWKSet) SqlJsonb Required
+    -- ^ The provider's signing/encrypting keys.
+
+  , providerJwkSetExpiresAt :: Col f "jwk_set_expires_at" UTCTime SqlTimestamptz Optional
+    -- ^ The time the cached JWK set will expire.
 
   , providerCreatedAt :: Col f "created_at" UTCTime SqlTimestamptz ReadOnly
     -- ^ The time this record was created.
@@ -72,6 +101,22 @@ makeTable ''ProviderF "providers_openidconnect"
 --------------------------------------------------------------------------------
 -- | Monomorphic alias.
 type Provider = ProviderF ForHask
+
+--------------------------------------------------------------------------------
+fetchDiscoveryDocument
+  :: (Has HTTP sig m, Has Error sig m)
+  => URL
+  -> m (Discovery, Maybe UTCTime)
+fetchDiscoveryDocument = discovery http . getURI >=>
+  either (throwError . HttpException . SomeException) pure
+
+--------------------------------------------------------------------------------
+fetchProviderKeys
+  :: (Has HTTP sig m, Has Error sig m)
+  => Discovery
+  -> m (JWKSet, Maybe UTCTime)
+fetchProviderKeys = keysFromDiscovery http >=>
+  either (throwError . HttpException . SomeException) pure
 
 --------------------------------------------------------------------------------
 -- | Restrict a query to only those providers that are active.
