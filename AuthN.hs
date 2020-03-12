@@ -20,28 +20,27 @@ module Sthenauth.Shell.AuthN
 
 --------------------------------------------------------------------------------
 -- Imports:
-import Data.Time.Clock (getCurrentTime)
+import Sthenauth.Core.Action (MonadByline(..))
+import qualified Sthenauth.Core.AuthN as A
 import Sthenauth.Core.CurrentUser
 import Sthenauth.Core.Email
 import Sthenauth.Core.Error
+import Sthenauth.Core.Remote (Remote, requestTime)
 import Sthenauth.Core.Session (ClearSessionKey(..))
 import Sthenauth.Core.Site as Site
 import Sthenauth.Crypto.Effect
 import Sthenauth.Database.Effect
-import Sthenauth.Lang.Class
-import Sthenauth.Lang.Script (MonadByline(..))
 import Sthenauth.Providers.Local.Login
-import qualified Sthenauth.Scripts as Scripts
 import Sthenauth.Shell.Helpers
 import Sthenauth.Shell.Options as Options
 import System.Console.Byline
+import Web.Cookie (setCookieValue)
 
 --------------------------------------------------------------------------------
 authenticate
   :: forall sig m a.
      ( MonadIO m
      , MonadByline m
-     , MonadSthenauth m
      , Has Database sig m
      , Has Crypto sig m
      , Has (State CurrentUser) sig m
@@ -49,12 +48,12 @@ authenticate
      )
   => Options a
   -> Site
+  -> Remote
   -> m CurrentUser
-authenticate opts site = do
-  rtime <- liftIO getCurrentTime
+authenticate opts site remote =
   case Options.session opts of
     Just key -> do
-      user <- currentUserFromSessionKey site rtime (coerce key)
+      user <- currentUserFromSessionKey site (remote ^. requestTime) (coerce key)
       put user
       pure user
     Nothing  -> do
@@ -64,7 +63,10 @@ authenticate opts site = do
 
   where
     auth :: Text -> Text -> m ClearSessionKey
-    auth e = fmap (^. _2) . liftSthenauth . Scripts.authenticate . Credentials e
+    auth n p = A.requestAuthN site remote
+      (A.LoginWithLocalCredentials (Credentials n p)) >>= \case
+        A.LoggedIn cookie _ -> pure (ClearSessionKey $ decodeUtf8 $ setCookieValue cookie)
+        _ -> throwUserError (AuthenticationFailedError Nothing)
 
     login :: Maybe (Text, Text) -> m ClearSessionKey
     login (Just (e, p)) = auth e p

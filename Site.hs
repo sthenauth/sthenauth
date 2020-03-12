@@ -51,7 +51,7 @@ options =
 --------------------------------------------------------------------------------
 main :: Actions -> Command ()
 main actions = do
-  site <- currentSite
+  site <- asks currentSite
   updateSite (siteId site)
     ((siteForUI site)
       { siteFqdn = fromMaybe (siteFqdn site) (setFqdn actions)

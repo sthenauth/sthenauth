@@ -27,28 +27,24 @@ module Sthenauth.Shell.Command
 import Control.Algebra
 import Control.Carrier.Database (runDatabase)
 import Control.Carrier.Error.Either (runError)
-import Control.Effect.Reader
 import Crypto.Random (MonadRandom(..))
 import Data.Time.Clock (getCurrentTime)
+import Sthenauth.Core.Action
 import Sthenauth.Core.Address (localhost)
-import Sthenauth.Core.Config
 import Sthenauth.Core.CurrentUser
 import Sthenauth.Core.Error
 import Sthenauth.Core.Remote
 import Sthenauth.Core.Runtime
 import Sthenauth.Core.Site (Site, siteFqdn, siteFromFQDN)
 import Sthenauth.Crypto.Effect
-import Sthenauth.Lang.Class
-import Sthenauth.Lang.Script
 import Sthenauth.Shell.AuthN
 import Sthenauth.Shell.Options (Options, site)
 
 --------------------------------------------------------------------------------
 -- | A type encapsulating Sthenauth shell commands.
-newtype Command a = Command { unC :: Script IO a }
+newtype Command a = Command { unC :: Action IO a }
   deriving newtype
     ( Functor, Applicative, Monad
-    , MonadSthenauth
     , MonadByline
     )
 
@@ -56,23 +52,11 @@ newtype Command a = Command { unC :: Script IO a }
 instance MonadIO Command where
   liftIO = Command . lift . liftIO
 
-instance Algebra (ScriptEff IO) Command where
+instance Algebra (ActionEff IO) Command where
   alg = Command . alg . handleCoercible
 
 instance MonadRandom Command where
   getRandomBytes = randomByteArray
-
---------------------------------------------------------------------------------
-currentSite :: Command Site
-currentSite = do
-  (_ :: Runtime, site, _ :: Remote) <- ask
-  pure site
-
---------------------------------------------------------------------------------
-currentConfig :: Command Config
-currentConfig = do
-  (env, _ :: Site, _ :: Remote) <- ask
-  pure (rtConfig env)
 
 --------------------------------------------------------------------------------
 runCommand
@@ -86,8 +70,9 @@ runCommand opts env cmd =
   where
     go :: Command a
     go = do
-      site <- currentSite
-      user <- authenticate opts site
+      site <- asks currentSite
+      remote <- asks currentRemote
+      user <- authenticate opts site remote
       unless (isAdmin user) (throwUserError PermissionDenied)
       cmd -- Run the original action.
 
@@ -103,7 +88,7 @@ runBootCommand opts env cmd =
     Left e -> pure (Left e)
     Right site -> do
       remote <- mkRemote site
-      snd <<$>> runScript env site remote notLoggedIn (unC cmd)
+      snd <<$>> runAction env site remote notLoggedIn (unC cmd)
 
   where
     findSiteFromOptions :: IO (Either BaseError Site)

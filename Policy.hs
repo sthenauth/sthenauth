@@ -24,8 +24,8 @@ module Sthenauth.Shell.Policy
 -- Imports:
 import Options.Applicative as Options
 import Sthenauth.Core.Policy
-import Sthenauth.Lang.Class
-import Sthenauth.Lang.Sthenauth
+import Sthenauth.Core.Site
+import Sthenauth.Database.Effect
 import Sthenauth.Shell.Command
 
 --------------------------------------------------------------------------------
@@ -59,6 +59,7 @@ options = Options.hsubparser $ mconcat
 
 --------------------------------------------------------------------------------
 main :: SubCommand -> Command ()
-main sub = liftSthenauth $
-  case sub of
-    ChangeAccountCreationTo mode -> modifyPolicy (accountCreation .~ mode)
+main = \case
+  ChangeAccountCreationTo mode -> do
+    site <- asks currentSite
+    runQuery (modifyPolicy site (accountCreation .~ mode))

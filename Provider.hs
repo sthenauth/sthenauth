@@ -23,6 +23,7 @@ module Sthenauth.Shell.Provider
 --------------------------------------------------------------------------------
 -- Imports:
 import Control.Lens (folded, filtered, firstOf)
+import Iolaus.Database.JSON
 import Iolaus.Database.Query
 import qualified Opaleye as O
 import Options.Applicative as Options
@@ -121,18 +122,24 @@ registerOidcProvider = \case
 
     createOidcProviderRecord :: Known -> OidcClientInfo -> Command ()
     createOidcProviderRecord kp oci = do
-      safeClientId <- encrypt (oidcClientId oci)
-      safeClientSecret <- encrypt (oidcClientSecret oci)
+      safeClientSecret <- encrypt (ProviderPlainPassword (oidcClientSecret oci))
+      (disco, dcache)  <- fetchDiscoveryDocument (kp ^. discoveryUrl)
+      (keys, kcache)   <- fetchProviderKeys disco
+
       let prov = Provider
-            { pk           = Nothing
-            , enabled      = toFields True
-            , providerName = toFields (kp ^. K.providerName)
-            , logoUrl      = O.toNullable (toFields (kp ^. K.logoUrl))
-            , oidcUrl      = toFields (kp ^. K.oidcUrl)
-            , clientId     = toFields safeClientId
-            , clientSecret = toFields safeClientSecret
-            , createdAt    = Nothing
-            , updatedAt    = Nothing
+            { providerId                 = Nothing
+            , providerEnabled            = toFields True
+            , providerName               = toFields (kp ^. K.providerName)
+            , providerLogoUrl            = O.toNullable (toFields (kp ^. K.logoUrl))
+            , providerClientId           = toFields (oidcClientId oci)
+            , providerClientSecret       = toFields safeClientSecret
+            , providerDiscoveryUrl       = toFields (kp ^. K.discoveryUrl)
+            , providerDiscoveryDoc       = toFields (LiftJSON disco)
+            , providerDiscoveryExpiresAt = toFields dcache
+            , providerJwkSet             = toFields (LiftJSON keys)
+            , providerJwkSetExpiresAt    = toFields kcache
+            , providerCreatedAt          = Nothing
+            , providerUpdatedAt          = Nothing
             }
       runQuery $ do
         1 <- insertProviderReturningCount prov

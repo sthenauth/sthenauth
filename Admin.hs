@@ -22,12 +22,16 @@ module Sthenauth.Shell.Admin
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Iolaus.Database.Query (Query)
 import Options.Applicative as Options
 import Sthenauth.Core.Account as Account
-import Sthenauth.Lang.Class
-import Sthenauth.Lang.Script (liftByline)
-import Sthenauth.Lang.Sthenauth
-import Sthenauth.Scripts.Admin
+import Sthenauth.Core.Admin
+import Sthenauth.Core.Error
+import Sthenauth.Core.Site (siteId)
+import Sthenauth.Database.Effect
+import Sthenauth.Core.Action (liftByline)
+import Sthenauth.Providers.Local.LocalAccount
+import Sthenauth.Providers.Local.Login
 import Sthenauth.Shell.Command
 import System.Console.Byline as Byline
 
@@ -61,18 +65,18 @@ options = Options.hsubparser $ mconcat
       ]
 
 --------------------------------------------------------------------------------
+-- | FIXME: centralize this code and fire events!
 main :: Action -> Command ()
-main act =
-  case act of
-    Promote t -> go t promoteToAdmin
-    Demote  t -> go t demoteFromAdmin
-
+main = \case
+    Promote t -> go (t >>= toLogin) (alterAdmin . PromoteToAdmin)
+    Demote  t -> go (t >>= toLogin) (alterAdmin . DemoteFromAdmin)
   where
-    go :: Maybe Text -> (AccountId -> Sthenauth ()) -> Command ()
-    go mt f =
-      let go' t = liftSthenauth (withAccount t $ \a -> f (accountId a))
-      in case mt of
-        Just t  ->
-          go' t
-        Nothing ->
-          liftByline (Byline.ask "Username/Email to alter: " Nothing) >>= go'
+    go :: Maybe Login -> (AccountId -> Query ()) -> Command ()
+    go Nothing f = do
+      login <- liftByline (Byline.ask "Username/Email to alter: " Nothing)
+      go (toLogin login) f
+    go (Just login) f = do
+      site <- asks currentSite
+      getAccountFromLogin (siteId site) login >>= \case
+        Nothing -> throwUserError InvalidUsernameOrEmailError
+        Just acct -> runQuery (f (accountId acct))

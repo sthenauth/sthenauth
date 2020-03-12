@@ -28,12 +28,12 @@ module Sthenauth.Shell.Helpers
 -- Imports:
 import Data.Time.Clock (getCurrentTime)
 import Iolaus.Crypto.Password as Crypto
-import Sthenauth.Core.AuthN (asStrongPassword)
+import Sthenauth.Core.Action (MonadByline(..))
 import Sthenauth.Core.Email
 import Sthenauth.Core.Error
 import Sthenauth.Core.Policy
 import Sthenauth.Crypto.Effect
-import Sthenauth.Lang.Script (MonadByline(..))
+import Sthenauth.Providers.Local.Password (asStrongPassword)
 import System.Console.Byline as Byline
 
 --------------------------------------------------------------------------------

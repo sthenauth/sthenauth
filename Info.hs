@@ -32,5 +32,5 @@ import Sthenauth.Shell.Options (Options)
 -- | Simple command that dumps the current configuration.
 main :: Options a -> Command ()
 main _ = do
-  cfg <- currentConfig
+  cfg <- asks currentConfig
   liftIO $ LByteString.putStr (encodePretty cfg)

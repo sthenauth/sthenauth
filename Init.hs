@@ -37,6 +37,7 @@ import Iolaus.Database.Query (count)
 import Iolaus.Database.Table (getKey)
 import qualified Paths_sthenauth as Sthenauth
 import Sthenauth.Core.Account as Account
+import Sthenauth.Core.Action
 import Sthenauth.Core.Admin as Admin
 import Sthenauth.Core.Config
 import Sthenauth.Core.Email
@@ -48,7 +49,6 @@ import Sthenauth.Crypto.Carrier (CryptoC, runCrypto)
 import qualified Sthenauth.Crypto.Carrier as Crypto
 import Sthenauth.Crypto.Effect
 import Sthenauth.Database.Effect
-import Sthenauth.Lang.Script
 import Sthenauth.Providers.Local.LocalAccount
 import Sthenauth.Providers.Local.Login
 import Sthenauth.Shell.Command
@@ -120,7 +120,7 @@ initInteractive opts renv = go >>= \case
 
     initialAdmin :: Command ()
     initialAdmin = do
-      site <- currentSite
+      site <- asks currentSite
       liftByline (sayLn ("Create the initial administrator account:" <> fg green))
 
       let mkLogin = toLogin . getEmail <$> maybeAskEmail (Options.email opts)
