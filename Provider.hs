@@ -28,6 +28,7 @@ import Iolaus.Database.Query
 import qualified Opaleye as O
 import Options.Applicative as Options
 import Sthenauth.Core.Error
+import Sthenauth.Core.HTTP
 import Sthenauth.Crypto.Effect
 import Sthenauth.Database.Effect
 import Sthenauth.Providers.OIDC.Known as K
@@ -120,11 +121,12 @@ registerOidcProvider = \case
        Nothing -> throwUserError (UserInputError ("unknown provider: " <> name))
        Just provider -> createOidcProviderRecord provider oinfo
 
+    -- FIXME: Move most of this code into the provider module.
     createOidcProviderRecord :: Known -> OidcClientInfo -> Command ()
     createOidcProviderRecord kp oci = do
       safeClientSecret <- encrypt (ProviderPlainPassword (oidcClientSecret oci))
-      (disco, dcache)  <- fetchDiscoveryDocument (kp ^. discoveryUrl)
-      (keys, kcache)   <- fetchProviderKeys disco
+      (disco, dcache)  <- fetchDiscoveryDocument http (kp ^. discoveryUrl)
+      (keys, kcache)   <- fetchProviderKeys http disco
 
       let prov = Provider
             { providerId                 = Nothing
