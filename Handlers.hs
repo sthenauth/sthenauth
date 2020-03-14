@@ -136,6 +136,7 @@ executeAuthN req = do
   remote <- asks currentRemote
   requestAuthN site remote req >>= \case
     LoggedIn cookie postLogin -> pure (addHeader cookie postLogin)
+    LoggedOut -> lift (CME.throwError err401)
     NextStep step -> lift (processNextStep step)
 
 --------------------------------------------------------------------------------
