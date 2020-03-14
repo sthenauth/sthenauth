@@ -50,6 +50,7 @@ data UserError
   | UserInputError Text
   | InvalidUsernameOrEmailError
   | AccountAlreadyExistsError
+  | OidcProviderAuthenticationFailed
   | ValidationError Validation.Errors
   | NotFoundError
   | PermissionDenied
@@ -70,10 +71,10 @@ data BaseError
   | MissingDefaultConfigError FilePath FilePath
   | MissingSecretsDir FilePath
   | MissingSiteError
-  | OidcDiscoveryError Text
-  | OidcRedirectError Text
   | RuntimeError Text
   | HttpException SomeException
+  | OidcProviderError SomeException
+  | OidcProviderInvalidClaimsSet
   | ShellException SomeException
   deriving stock (Generic, Show)
   deriving anyclass Exception
@@ -104,13 +105,14 @@ toServerError = \case
     ue :: UserError -> ServerError
     ue e =
       case e of
-        MustAuthenticateError       -> mkSE e Servant.err401
-        WeakPasswordError _         -> mkSE e Servant.err400
-        MustChangePasswordError     -> mkSE e Servant.err400
-        AuthenticationFailedError _ -> mkSE e Servant.err401
-        UserInputError _            -> mkSE e Servant.err400
-        InvalidUsernameOrEmailError -> mkSE e Servant.err400
-        AccountAlreadyExistsError   -> mkSE e Servant.err400
-        ValidationError _           -> mkSE e Servant.err400
-        NotFoundError               -> mkSE e Servant.err404
-        PermissionDenied            -> mkSE e Servant.err403
+        MustAuthenticateError            -> mkSE e Servant.err401
+        WeakPasswordError _              -> mkSE e Servant.err400
+        MustChangePasswordError          -> mkSE e Servant.err400
+        AuthenticationFailedError _      -> mkSE e Servant.err401
+        UserInputError _                 -> mkSE e Servant.err400
+        InvalidUsernameOrEmailError      -> mkSE e Servant.err400
+        AccountAlreadyExistsError        -> mkSE e Servant.err400
+        OidcProviderAuthenticationFailed -> mkSE e Servant.err401
+        ValidationError _                -> mkSE e Servant.err400
+        NotFoundError                    -> mkSE e Servant.err404
+        PermissionDenied                 -> mkSE e Servant.err403

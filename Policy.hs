@@ -29,7 +29,7 @@ module Sthenauth.Core.Policy
   , assuranceLevel
   , minimumPasswordLength
   , jwkExpiresIn
-  , oidcPartialExpiresIn
+  , oidcCookieExpiresIn
   , accountCreation
   , maxSessionsPerAccount
   , aal1
@@ -202,9 +202,9 @@ data Policy = Policy
   , _jwkExpiresIn :: Seconds
     -- ^ Number of seconds before a new JWK expires.
 
-  , _oidcPartialExpiresIn :: Seconds
-    -- ^ Number of seconds before a partial (in-progress) OIDC
-    -- connection is expired.
+  , _oidcCookieExpiresIn :: Seconds
+    -- ^ Number of seconds before an OIDC cookie (session set up
+    -- cookie) is expired.
 
   , _accountCreation :: AccountCreation
     -- ^ Policy for how new accounts are created.
@@ -306,7 +306,7 @@ checkPolicy = Policy
   <$> _assuranceLevel .: checkAssuranceLevel <?> "assurance_level"
   <*> _minimumPasswordLength .: minInt 4 <?> "minimum_password_length"
   <*> (Seconds <$> (getSeconds . _jwkExpiresIn) .: minInt 300 <?> "jwk_expires_in")
-  <*> (Seconds <$> (getSeconds . _oidcPartialExpiresIn) .: intRange 120 1800 <?> "oidc_partial_expires_in")
+  <*> (Seconds <$> (getSeconds . _oidcCookieExpiresIn) .: intRange 120 1800 <?> "oidc_cookie_expires_in")
   <*> _accountCreation .: passthru <?> "account_creation"
   <*> _maxSessionsPerAccount .: intRange 1 100 <?> "max_sessions_per_account"
 
@@ -326,7 +326,7 @@ defaultPolicy = Policy
   { _assuranceLevel = aal1
   , _minimumPasswordLength = 6
   , _jwkExpiresIn = Seconds (24 * 60 * 60) -- 24 hours.
-  , _oidcPartialExpiresIn = Seconds (5 * 60) -- 5 minutes.
+  , _oidcCookieExpiresIn = Seconds (5 * 60) -- 5 minutes.
   , _accountCreation = AdminInvitation
   , _maxSessionsPerAccount = 25
   }

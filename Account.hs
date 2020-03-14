@@ -22,10 +22,12 @@ module Sthenauth.Core.Account
   ( AccountF(..)
   , Account
   , AccountId
+  , fromAccounts
+  , newAccount
   , AccountEmailF(..)
   , AccountEmail
   , AccountEmailId
-  , fromAccounts
+  , newAccountEmail
   , createAccount
   , findAccountByUsername
   , emailHashed
@@ -80,6 +82,30 @@ makeTable ''AccountF "accounts"
 type Account = AccountF ForHask
 
 --------------------------------------------------------------------------------
+-- | Properly select from the accounts table.
+--
+-- FIXME: Add a column to lock an account and check it here.
+fromAccounts :: Select (AccountF SqlRead)
+fromAccounts = selectTable accounts
+
+--------------------------------------------------------------------------------
+-- | Create a new account via an insert statement.
+newAccount :: SiteId -> Maybe Username -> Insert [Account]
+newAccount sid username =
+  toInsert $
+    Account
+      { accountId        = Nothing
+      , accountSiteId    = toFields sid
+      , accountUsername  = O.maybeToNullable (toFields username)
+      , accountPassword  = O.null
+      , accountCreatedAt = Nothing
+      , accountUpdatedAt = Nothing
+      }
+  where
+    toInsert :: AccountF SqlWrite -> Insert [Account]
+    toInsert a = Insert accounts [a] (rReturning id) Nothing
+
+--------------------------------------------------------------------------------
 -- | Primary key for the @emails@ table.
 type AccountEmailId = Key UUID AccountEmailF
 
@@ -95,7 +121,7 @@ data AccountEmailF f = AccountEmail
   , emailAccountId :: Col f "account_id" AccountId SqlUuid ForeignKey
   -- ^ The account this email address is for (foreign key).
 
-  , email :: Col f "email" SafeEmail SqlJsonb Required
+  , emailAddress :: Col f "email" SafeEmail SqlJsonb Required
   -- ^ Encrypted version of the email address so it can be fetched and
   -- used by the primary application but is still safe at rest.
 
@@ -120,11 +146,29 @@ makeTable ''AccountEmailF "emails"
 type AccountEmail = AccountEmailF ForHask
 
 --------------------------------------------------------------------------------
--- | Properly select from the accounts table.
---
--- FIXME: Add a column to lock an account and check it here.
-fromAccounts :: Select (AccountF SqlRead)
-fromAccounts = selectTable accounts
+-- | Create a new email address via an insert method.  The account ID
+-- comes last in the argument list to allow for partial application
+-- until the account is known.
+newAccountEmail
+  :: SafeEmail
+  -> SiteId
+  -> Maybe UTCTime
+  -> AccountId
+  -> Insert Int64
+newAccountEmail email sid mvalid aid =
+  toInsert $
+    AccountEmail
+      { emailId         = Nothing
+      , emailSiteId     = toFields sid
+      , emailAccountId  = toFields aid
+      , emailAddress    = toFields email
+      , emailVerifiedAt = O.maybeToNullable (toFields mvalid)
+      , emailCreatedAt  = Nothing
+      , emailUpdatedAt  = Nothing
+      }
+  where
+    toInsert :: AccountEmailF SqlWrite -> Insert Int64
+    toInsert e = Insert emails [e] rCount (Just O.DoNothing)
 
 --------------------------------------------------------------------------------
 -- | FIXME: This should use ForUI and do validation.
@@ -146,7 +190,7 @@ createAccount acct emailf = do
 --------------------------------------------------------------------------------
 -- | Access just the hashed portion of an email address.
 emailHashed :: AccountEmailF SqlRead -> O.FieldNullable SqlJsonb
-emailHashed e = O.toNullable (email e) .-> sqlStrictText "hashed"
+emailHashed e = O.toNullable (emailAddress e) .-> sqlStrictText "hashed"
 
 --------------------------------------------------------------------------------
 -- | Find an account based on an email address.

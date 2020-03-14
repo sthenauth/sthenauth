@@ -44,6 +44,12 @@ data EventDetail
       -- ^ Where the user went after logging in.
     }
 
+  | EventFailedOidcProviderAuth -- ^ Failed to auth with a provider.
+    { attemptedProviderId :: UUID
+    , providerErrorCode   :: Text
+    , providerErrorDesc   :: Maybe Text
+    }
+
   | EventLogout -- ^ A session was deleted.
     { loggedOutOfAccountId :: UUID
     }

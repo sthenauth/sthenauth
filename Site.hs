@@ -44,6 +44,7 @@ module Sthenauth.Core.Site
   , updateSite
   , insertAlias
   , sessionCookieName
+  , oidcCookieName
   ) where
 
 --------------------------------------------------------------------------------
@@ -457,3 +458,8 @@ updateSite sid ui = do
 -- | FIXME: make this a site parameter.
 sessionCookieName :: Site -> Text
 sessionCookieName _ = "ss"
+
+--------------------------------------------------------------------------------
+-- | The name of a cookie for OIDC authentication requests.
+oidcCookieName :: Site -> Text
+oidcCookieName = sessionCookieName >>> (<> "_oidc")

@@ -50,6 +50,7 @@ data RequestAuthN
 data ResponseAuthN
   = LoggedIn SetCookie PostLogin
   | NextStep AdditionalStep
+  | LoggedOut
 
 --------------------------------------------------------------------------------
 -- | Authenticate a user with the given provider.
@@ -86,6 +87,9 @@ requestAuthN site remote req = do
 
       let cookie = makeSessionCookie (sessionCookieName site) key sess
       pure (LoggedIn cookie postLogin)
+
+    SuccessfulLogout ->
+      pure LoggedOut
 
     FailedAuthN ue detail -> do
       user <- get
