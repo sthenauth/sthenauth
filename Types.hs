@@ -38,6 +38,9 @@ data ProviderResponse
   | SuccessfulAuthN Account AccountStatus
     -- ^ The end-user has successfully authenticated.
 
+  | SuccessfulLogout
+    -- ^ The end-user was successfully logged out.
+
   | FailedAuthN UserError EventDetail
     -- ^ The end-user failed authentication.
 

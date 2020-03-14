@@ -23,25 +23,33 @@ module Sthenauth.Providers.OIDC.Provider
   , Provider
   , ProviderId
   , ProviderPassword(..)
+  , toOidcProvider
+  , providerCredentials
   , fetchDiscoveryDocument
   , fetchProviderKeys
   , fromProviders
   , insertProviderReturningCount
+  , refreshProviderCacheIfNeeded
   , providerById
   ) where
 
 --------------------------------------------------------------------------------
 import Control.Arrow (returnA)
+import Control.Monad.Writer.Strict (execWriterT, tell)
 import Crypto.JOSE (JWKSet)
 import Data.Binary (Binary)
 import Iolaus.Database.JSON
 import Iolaus.Database.Query
 import Iolaus.Database.Table
 import qualified Opaleye as O
+import qualified OpenID.Connect.Authentication as A
 import OpenID.Connect.Client.Provider (Discovery, discovery, keysFromDiscovery)
+import qualified OpenID.Connect.Client.Provider as P
+import Prelude hiding (tell)
 import Sthenauth.Core.Error
-import Sthenauth.Core.HTTP
+import qualified Sthenauth.Core.HTTP as HTTP
 import Sthenauth.Core.URL
+import Sthenauth.Crypto.Effect
 
 --------------------------------------------------------------------------------
 -- | The primary key on the OpenID Connect providers table.
@@ -103,20 +111,76 @@ makeTable ''ProviderF "providers_openidconnect"
 type Provider = ProviderF ForHask
 
 --------------------------------------------------------------------------------
-fetchDiscoveryDocument
-  :: (Has HTTP sig m, Has Error sig m)
+-- | Turn a provider record into one that can be used by the OpenID
+-- Connect library.
+toOidcProvider :: Provider -> P.Provider
+toOidcProvider p =
+  P.Provider
+    { P.providerDiscovery = unliftJSON (providerDiscoveryDoc p)
+    , P.providerKeys      = unliftJSON (providerJwkSet p)
+    }
+
+--------------------------------------------------------------------------------
+-- | Create provider credentials from a provider record.
+providerCredentials
+  :: Has Crypto sig m
   => URL
+  -> Provider
+  -> m A.Credentials
+providerCredentials url provider = do
+  sec <- decrypt (providerClientSecret provider) <&> \case
+    ProviderPlainPassword t     -> A.AssignedSecretText t
+    ProviderPasswordAssertion t -> A.AssignedAssertionText t
+  pure $
+    A.Credentials
+      { A.assignedClientId  = providerClientId provider
+      , A.clientSecret      = sec
+      , A.clientRedirectUri = getURI url
+      }
+
+--------------------------------------------------------------------------------
+fetchDiscoveryDocument
+  :: Has Error sig m
+  => HTTP.Client m
+  -> URL
   -> m (Discovery, Maybe UTCTime)
-fetchDiscoveryDocument = discovery http . getURI >=>
+fetchDiscoveryDocument http = discovery http . getURI >=>
   either (throwError . HttpException . SomeException) pure
 
 --------------------------------------------------------------------------------
+updateDiscoveryDocument
+  :: Has Error sig m
+  => HTTP.Client m
+  -> Provider
+  -> m (ProviderF SqlRead -> ProviderF SqlRead)
+updateDiscoveryDocument http p = do
+  (doc, cache) <- fetchDiscoveryDocument http (providerDiscoveryUrl p)
+  pure (\pr -> pr { providerDiscoveryDoc = toFields (LiftJSON doc)
+                  , providerDiscoveryExpiresAt = toFields
+                    (fromMaybe (providerDiscoveryExpiresAt p) cache)
+                  })
+
+--------------------------------------------------------------------------------
 fetchProviderKeys
-  :: (Has HTTP sig m, Has Error sig m)
-  => Discovery
+  :: Has Error sig m
+  => HTTP.Client m
+  -> Discovery
   -> m (JWKSet, Maybe UTCTime)
-fetchProviderKeys = keysFromDiscovery http >=>
+fetchProviderKeys http = keysFromDiscovery http >=>
   either (throwError . HttpException . SomeException) pure
+
+--------------------------------------------------------------------------------
+updateProviderKeys
+  :: Has Error sig m
+  => HTTP.Client m
+  -> Provider
+  -> m (ProviderF SqlRead -> ProviderF SqlRead)
+updateProviderKeys http p = do
+  (keys, cache) <- fetchProviderKeys http (unliftJSON (providerDiscoveryDoc p))
+  pure (\pr -> pr { providerJwkSet = toFields (LiftJSON keys)
+                  , providerJwkSetExpiresAt = toFields
+                      (fromMaybe (providerJwkSetExpiresAt p) cache)
+                  })
 
 --------------------------------------------------------------------------------
 -- | Restrict a query to only those providers that are active.
@@ -137,3 +201,41 @@ providerById pid = proc () -> do
 insertProviderReturningCount :: ProviderF SqlWrite -> Query Int64
 insertProviderReturningCount p =
   insert (Insert providers_openidconnect [p] rCount Nothing)
+
+--------------------------------------------------------------------------------
+-- | If a provider's cache needs to be updated, return the update
+-- statement as a 'Left' value.  Otherwise return the given provider
+-- in 'Right'.
+refreshProviderCacheIfNeeded
+  :: forall sig m. Has Error sig m
+  => HTTP.Client m              -- ^ The HTTP client function.
+  -> UTCTime                    -- ^ The current time (for cache testing).
+  -> Provider                   -- ^ The provider record to test.
+  -> m (Either (Update [Provider]) Provider)
+refreshProviderCacheIfNeeded http time provider
+  | cacheValid provider = pure (Right provider)
+  | otherwise = do
+      f <- makeUpdateFunction provider
+      pure . Left $
+        Update
+          { uTable      = providers_openidconnect
+          , uUpdateWith = O.updateEasy f
+          , uWhere      = \p -> providerId p .== toFields (providerId provider)
+          , uReturning  = rReturning id
+          }
+
+  where
+    cacheValid p     = discoveryValid p && keysValid p
+    discoveryValid p = providerDiscoveryExpiresAt p > time
+    keysValid p      = providerJwkSetExpiresAt p > time
+
+    makeUpdateFunction
+      :: Provider
+      -> m (ProviderF SqlRead -> ProviderF SqlRead)
+    makeUpdateFunction p = fmap appEndo . execWriterT $ do
+      unless (discoveryValid p) $ do
+        f <- lift (updateDiscoveryDocument http p)
+        tell (Endo f)
+      unless (keysValid p) $ do
+        f <- lift (updateProviderKeys http p)
+        tell (Endo f)

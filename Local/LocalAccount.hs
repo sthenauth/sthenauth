@@ -92,7 +92,7 @@ toLocalAccount sid login passwd =
                 , emailUpdatedAt  = Nothing
                 , emailSiteId     = toFields sid
                 , emailAccountId  = toFields (getKey key)
-                , email           = toFields et
+                , emailAddress    = toFields et
                 , emailVerifiedAt = O.null
                 }
             ]
