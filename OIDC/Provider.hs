@@ -35,7 +35,8 @@ module Sthenauth.Providers.OIDC.Provider
 
 --------------------------------------------------------------------------------
 import Control.Arrow (returnA)
-import Control.Monad.Writer.Strict (execWriterT, tell)
+import Control.Carrier.Lift (runM, sendM)
+import Control.Carrier.Writer.Strict (execWriter, tell)
 import Crypto.JOSE (JWKSet)
 import Data.Binary (Binary)
 import Iolaus.Database.JSON
@@ -219,7 +220,7 @@ refreshProviderCacheIfNeeded http time provider
       pure . Left $
         Update
           { uTable      = providers_openidconnect
-          , uUpdateWith = O.updateEasy f
+          , uUpdateWith = O.updateEasy (appEndo f)
           , uWhere      = \p -> providerId p .== toFields (providerId provider)
           , uReturning  = rReturning id
           }
@@ -229,13 +230,11 @@ refreshProviderCacheIfNeeded http time provider
     discoveryValid p = providerDiscoveryExpiresAt p > time
     keysValid p      = providerJwkSetExpiresAt p > time
 
-    makeUpdateFunction
-      :: Provider
-      -> m (ProviderF SqlRead -> ProviderF SqlRead)
-    makeUpdateFunction p = fmap appEndo . execWriterT $ do
+    makeUpdateFunction :: Provider -> m (Endo (ProviderF SqlRead))
+    makeUpdateFunction p = runM . execWriter $ do
       unless (discoveryValid p) $ do
-        f <- lift (updateDiscoveryDocument http p)
+        f <- sendM (updateDiscoveryDocument http p)
         tell (Endo f)
       unless (keysValid p) $ do
-        f <- lift (updateProviderKeys http p)
+        f <- sendM (updateProviderKeys http p)
         tell (Endo f)
