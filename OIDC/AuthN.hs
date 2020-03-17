@@ -16,6 +16,7 @@ License: Apache-2.0
 -}
 module Sthenauth.Providers.OIDC.AuthN
   ( RequestOIDC(..)
+  , OidcLogin(..)
   , IncomingOidcProviderError(..)
   , requestOIDC
   ) where
@@ -55,9 +56,16 @@ data IncomingOidcProviderError = IncomingOidcProviderError
   } deriving (Show, Exception)
 
 --------------------------------------------------------------------------------
+newtype OidcLogin = OidcLogin
+  { remoteProviderId :: UUID
+  }
+  deriving stock (Generic, Show)
+  deriving (ToJSON, FromJSON) via GenericJSON OidcLogin
+
+--------------------------------------------------------------------------------
 -- | Requests that can be processed by this module.
 data RequestOIDC
-  = LoginWithOidcProvider UUID URL
+  = LoginWithOidcProvider URL OidcLogin
   | SuccessfulReturnFromProvider URL OIDC.UserReturnFromRedirect
   | FailedReturnFromProvider IncomingOidcProviderError
   | BackendLogout AccountId
@@ -76,15 +84,15 @@ requestOIDC
   -> RequestOIDC
   -> m ProviderResponse
 requestOIDC site remote = \case
-  LoginWithOidcProvider uuid url ->
-    startProviderLogin site remote uuid url
+  LoginWithOidcProvider url login ->
+    startProviderLogin site remote url login
   SuccessfulReturnFromProvider url browser ->
     returnFromProvider site remote url browser
   FailedReturnFromProvider perror ->
     authenticationFailed perror
   BackendLogout _ ->
     -- FIXME: Update this when we support backend logout.
-    pure SuccessfulLogout
+    pure (SuccessfulLogout Nothing)
 
 --------------------------------------------------------------------------------
 -- | Initiate a authentication session with an OIDC provider by
@@ -99,10 +107,10 @@ startProviderLogin
      )
   => Site
   -> Remote
-  -> UUID
   -> URL
+  -> OidcLogin
   -> m ProviderResponse
-startProviderLogin site remote uuid url = do
+startProviderLogin site remote url (OidcLogin uuid) = do
   provider <- fetchProvider >>= refreshProvider (remote ^. requestTime)
   req <- authReq provider
   OIDC.authenticationRedirect

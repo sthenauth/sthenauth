@@ -18,7 +18,6 @@ module Sthenauth.Providers.Types
   ( ProviderResponse(..)
   , AdditionalStep(..)
   , AccountStatus(..)
-  , ProviderType(..)
   ) where
 
 --------------------------------------------------------------------------------
@@ -38,7 +37,7 @@ data ProviderResponse
   | SuccessfulAuthN Account AccountStatus
     -- ^ The end-user has successfully authenticated.
 
-  | SuccessfulLogout
+  | SuccessfulLogout (Maybe SetCookie)
     -- ^ The end-user was successfully logged out.
 
   | FailedAuthN UserError EventDetail
@@ -54,13 +53,3 @@ data AdditionalStep
 data AccountStatus
   = NewAccount       -- ^ The account was just created.
   | ExistingAccount  -- ^ The account already existed.
-
---------------------------------------------------------------------------------
--- | The types of providers supported.  This is used to control which
--- providers are allowed based on site policy.
-data ProviderType
-  = LocalProvider
-    -- ^ Local accounts.
-
-  | OidcProvider
-    -- ^ Accounts provided by an OpenID Connect provider.
