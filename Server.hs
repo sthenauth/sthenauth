@@ -32,22 +32,9 @@ import Sthenauth.API.Handlers
 import Sthenauth.API.Log
 import Sthenauth.API.Middleware
 import Sthenauth.API.Monad
+import Sthenauth.API.Routes
 import Sthenauth.CertAuth.TLS (serverSettingsForTLS)
 import Sthenauth.Core.Runtime
-
---------------------------------------------------------------------------------
--- | The final API which includes a file server for the UI files.
-type FinalAPI = "auth" :> Vault :> (API :<|> Raw)
-
---------------------------------------------------------------------------------
--- | The proxy value for the 'Sthenauth' API.
-api :: Proxy API
-api = Proxy
-
---------------------------------------------------------------------------------
--- | The proxy value for the final API.
-finalapi :: Proxy FinalAPI
-finalapi = Proxy
 
 --------------------------------------------------------------------------------
 -- | A server for the 'Sthenauth' API.
