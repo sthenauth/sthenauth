@@ -21,6 +21,7 @@ module Sthenauth.Core.URL
   , urlToText
   , urlToByteString
   , textToURL
+  , strToURL
   ) where
 
 --------------------------------------------------------------------------------
@@ -76,6 +77,13 @@ urlToByteString :: URL -> ByteString
 urlToByteString (URL uri) = Char8.pack (URI.uriToString id uri [])
 
 --------------------------------------------------------------------------------
+-- | Convert a 'String' value to a 'URL'.
+strToURL :: MonadPlus m => String -> m URL
+strToURL s = case URI.parseURI s of
+  Nothing -> mzero
+  Just u  -> pure (URL u)
+
+--------------------------------------------------------------------------------
 -- | Convert a 'Text' value to a 'URL'.
-textToURL :: Text -> Maybe URL
-textToURL = fmap URL . URI.parseURI . toString
+textToURL :: MonadPlus m => Text -> m URL
+textToURL = strToURL . toString

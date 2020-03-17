@@ -14,18 +14,16 @@ Copyright:
 License: Apache-2.0
 
 -}
-module Sthenauth.Core.PostLogin
-  ( PostLogin(..)
+module Sthenauth.Core.Provider
+  ( ProviderType(..)
   ) where
 
 --------------------------------------------------------------------------------
--- Imports:
-import Sthenauth.Core.URL
+-- | The types of providers supported.  This is used to control which
+-- providers are allowed based on site policy.
+data ProviderType
+  = LocalProvider
+    -- ^ Local accounts.
 
---------------------------------------------------------------------------------
--- | Information for a UI about what to do after a user logs in.
-newtype PostLogin = PostLogin
-  { post_login_uri :: URL
-  }
-  deriving stock (Generic, Show)
-  deriving (ToJSON, FromJSON) via GenericJSON PostLogin
+  | OidcProvider
+    -- ^ Accounts provided by an OpenID Connect provider.

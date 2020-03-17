@@ -18,6 +18,7 @@ module Sthenauth.Core.Action
   ( Action
   , ActionEff
   , Env(..)
+  , dischargeMonadRandom
   , runAction
 
   , MonadByline
@@ -80,9 +81,6 @@ instance MonadIO m => Algebra (ActionEff m) (Action m) where
 instance MonadTrans Action where
   lift = Action . lift . lift . lift . lift . lift . lift . lift
 
-instance MonadIO m => MonadRandom (Action m) where
-  getRandomBytes = randomByteArray
-
 -- FIXME: Temp hack,
 class (Monad m) => MonadByline m where
   liftByline :: Byline IO a -> m a
@@ -92,6 +90,29 @@ instance MonadIO m => MonadByline (Action m) where
     liftIO (runByline b) >>= \case
       Nothing -> throwError (RuntimeError "unexpected termination")
       Just x  -> return x
+
+--------------------------------------------------------------------------------
+newtype ActionM a = ActionM (Action IO a)
+  deriving newtype (Functor, Applicative, Monad)
+
+instance Algebra (ActionEff IO) ActionM where
+  alg = ActionM . Action . alg . handleCoercible
+
+instance MonadRandom ActionM where
+  getRandomBytes = randomByteArray
+
+--------------------------------------------------------------------------------
+-- | This is a complete hack to work around orphan instances from the
+-- JOSE package.
+dischargeMonadRandom :: MonadIO m => ActionM a -> Action m a
+dischargeMonadRandom (ActionM k) = do
+  env <- ask
+  user <- get
+  r <- Action . liftIO $
+    runAction (runtime env) (currentSite env) (currentRemote env) user k
+  case r of
+    Left e -> throwError e
+    Right (u, a) -> put u $> a
 
 --------------------------------------------------------------------------------
 -- | Execute a action inside 'MonadIO'.

@@ -37,8 +37,8 @@ module Sthenauth.Core.Site
   , checkSite
   , validateSite
   , siteForUI
-  , siteURI
-  , oidcCallbackURI
+  , siteURL
+  , pathToSiteUrl
   , postLogin
   , insertSite
   , updateSite
@@ -56,16 +56,15 @@ import Iolaus.Database.Extra
 import Iolaus.Database.Query hiding ((.?))
 import Iolaus.Database.Table
 import Iolaus.Validation
+import Network.URI (URI(..), URIAuth(..))
 import qualified Opaleye as O
 import Sthenauth.Core.Error
 import Sthenauth.Core.JWK
 import Sthenauth.Core.Policy
+import Sthenauth.Core.PostLogin
+import Sthenauth.Core.URL
 import Sthenauth.Crypto.Effect
 import Sthenauth.Database.Effect
-import Sthenauth.Core.PostLogin
-import Text.URI (URI)
-import qualified Text.URI as URI
-import Text.URI.Lens
 
 --------------------------------------------------------------------------------
 type SiteId = Key UUID SiteF
@@ -79,7 +78,7 @@ data SiteF f = Site
   , siteIsDefault :: Col f "is_default" Bool SqlBool Optional
     -- ^ Is this site the default site?
 
-  , afterLoginUrl :: Col f "after_login_url" Text SqlText Optional
+  , afterLoginUrl :: Col f "after_login_url" URL SqlText Optional
     -- ^ Where to send users after logging in.
 
   , siteFqdn :: Col f "fqdn" Text SqlText Required
@@ -342,7 +341,7 @@ checkSite
 checkSite = Site
   <$> {- Not allowed in JSON -}           pure Nothing <?> "pk"
   <*> (toFields      <$> siteIsDefault .? passthru     <?> "is_default")
-  <*> (toFields      <$> afterLoginUrl .? notBlank     <?> "after_login_url")
+  <*> (toFields      <$> afterLoginUrl .? passthru     <?> "after_login_url")
   <*> (toFields      <$> siteFqdn      .: checkFQDN    <?> "fqdn")
   <*> (sqlValueJSONB <$> sitePolicy    .: checkPolicy  <?> "policy")
   <*> {- Not allowed in JSON -}           pure Nothing <?> "created_at"
@@ -376,42 +375,26 @@ siteForUI s = Site
 
 --------------------------------------------------------------------------------
 -- | Construct a URI from a site.
-siteURI :: Site -> URI
-siteURI s = fromMaybe URI.emptyURI $ do
-  scheme <- URI.mkScheme "https"
-  host <- URI.mkHost (siteFqdn s) <|> URI.mkHost "localhost"
-
-  return $ URI.emptyURI &
-    uriScheme ?~ scheme &
-    uriAuthority .~ Right (URI.Authority Nothing host Nothing)
+siteURL :: Site -> URL
+siteURL s = URL $ URI
+  { uriScheme = "https:"
+  , uriAuthority = Just (URIAuth "" (toString (siteFqdn s)) "")
+  , uriPath = "/"
+  , uriQuery = ""
+  , uriFragment = ""
+  }
 
 --------------------------------------------------------------------------------
--- | The URL for OIDC providers to call back into.
---
--- FIXME: Need a way to tie this to the servant server.
-oidcCallbackURI :: Site -> URI
-oidcCallbackURI s = fromMaybe (siteURI s) $ do
-  path <- mapM URI.mkPathPiece ["auth", "oidc", "login", "done"]
-  pure (siteURI s & uriPath .~ path)
+-- | Get a URL back to this site that includes the given path.
+pathToSiteUrl :: String -> Site -> URL
+pathToSiteUrl path site =
+  let (URL uri) = siteURL site
+  in URL (uri { uriPath = path })
 
 --------------------------------------------------------------------------------
 -- | Create post-login instructions for the UI.
 postLogin :: Site -> PostLogin
-postLogin s = PostLogin alu
-
-  where
-    suri :: URI
-    suri = siteURI s
-
-    -- Parse the @after_login_url@ text, updating the scheme and host
-    -- name from the site URI if they are missing.
-    alu :: URI
-    alu = fromMaybe suri $ do
-      u <- URI.mkURI (afterLoginUrl s)
-
-      return $ u &
-        uriScheme %~ (<|> (suri ^. uriScheme)) &
-        uriAuthority %~ either (const (suri ^. uriAuthority)) Right
+postLogin s = PostLogin (afterLoginUrl s)
 
 --------------------------------------------------------------------------------
 -- | Try to insert a new site into the database.

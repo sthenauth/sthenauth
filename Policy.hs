@@ -40,7 +40,8 @@ module Sthenauth.Core.Policy
   , defaultPolicy
   , sessionExpire
   , sessionInactive
-  , openLocalAccountCreation
+  , policyAllowsLocalAccountCreation
+  , policyAllowsProviderType
   , assertPolicyRules
   , zxcvbnConfig
   ) where
@@ -55,6 +56,7 @@ import Data.Time.Clock
 import Iolaus.Database.JSON (liftJSON)
 import Iolaus.Validation
 import Sthenauth.Core.Error
+import Sthenauth.Core.Provider (ProviderType(..))
 import qualified Text.Password.Strength as Zxcvbn
 import qualified Text.Password.Strength.Config as Zxcvbn
 
@@ -343,12 +345,16 @@ sessionInactive p = addSeconds (p ^. (assuranceLevel.maxInactivityDuration))
 
 --------------------------------------------------------------------------------
 -- | True if the policy allows users to create their own local accounts.
-openLocalAccountCreation :: Policy -> Bool
-openLocalAccountCreation p =
+policyAllowsLocalAccountCreation :: Policy -> Bool
+policyAllowsLocalAccountCreation p =
   case p ^. accountCreation of
    AdminInvitation -> False
    SelfService     -> True
    OnlyFromOIDC    -> False
+
+--------------------------------------------------------------------------------
+policyAllowsProviderType :: ProviderType -> Policy -> Bool
+policyAllowsProviderType _ _ = True -- FIXME: implement this.
 
 --------------------------------------------------------------------------------
 -- | Evaluate the given policy rules and abort if any of them fail.

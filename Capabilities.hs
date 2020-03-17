@@ -55,7 +55,7 @@ toCapabilities :: Config -> Policy -> [OIDC.Public] -> Capabilities
 toCapabilities config policy oidc =
   Capabilities
     { canCreateLocalAccount =
-        openLocalAccountCreation policy
+        policyAllowsLocalAccountCreation policy
 
     , localPrimaryAuthenticators =
         let x = toS $ policy ^. (assuranceLevel.primaryAuthenticators)
