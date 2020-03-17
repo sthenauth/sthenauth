@@ -25,6 +25,7 @@ import qualified Sthenauth.Core.AuthN as A
 import Sthenauth.Core.CurrentUser
 import Sthenauth.Core.Email
 import Sthenauth.Core.Error
+import Sthenauth.Core.HTTP
 import Sthenauth.Core.Remote (Remote, requestTime)
 import Sthenauth.Core.Session (ClearSessionKey(..))
 import Sthenauth.Core.Site as Site
@@ -43,8 +44,10 @@ authenticate
      , MonadByline m
      , Has Database sig m
      , Has Crypto sig m
+     , Has HTTP sig m
      , Has (State CurrentUser) sig m
      , Has Error sig m
+     , MonadRandom m
      )
   => Options a
   -> Site

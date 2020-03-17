@@ -24,12 +24,13 @@ module Sthenauth.Shell.Site
 -- Imports:
 import Options.Applicative as Options
 import Sthenauth.Core.Site
+import Sthenauth.Core.URL
 import Sthenauth.Shell.Command
 
 --------------------------------------------------------------------------------
 data Actions = Actions
   { setFqdn          :: Maybe Text
-  , setAfterLoginUrl :: Maybe Text
+  , setAfterLoginUrl :: Maybe URL
   }
 
 --------------------------------------------------------------------------------
@@ -42,7 +43,7 @@ options =
           , help "Set the site's FQDN to DOMAIN"
           ]))
 
-    <*> optional (strOption (mconcat
+    <*> optional (option (maybeReader strToURL) (mconcat
           [ long "set-after-login"
           , metavar "URL"
           , help "Change the redirection URL after a successful login"
