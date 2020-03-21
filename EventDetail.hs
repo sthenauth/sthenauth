@@ -21,6 +21,7 @@ module Sthenauth.Core.EventDetail
 --------------------------------------------------------------------------------
 -- Imports:
 import Iolaus.Database.JSON (liftJSON)
+import Sthenauth.Core.Encoding
 import Sthenauth.Core.PostLogin
 
 --------------------------------------------------------------------------------

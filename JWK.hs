@@ -27,7 +27,6 @@ module Sthenauth.Core.JWK
 import Crypto.Hash (Digest, SHA256)
 import qualified Crypto.JOSE as JOSE
 import qualified Crypto.JOSE.JWA.JWE.Alg as JOSE
-import Crypto.Random (MonadRandom)
 import qualified Data.Aeson as Aeson
 import Data.Binary (Binary)
 import qualified Data.Binary as Binary

@@ -32,12 +32,11 @@ module Sthenauth.Core.Remote
 -- Imports:
 import Control.Lens.TH (makeLenses)
 import Data.List (lookup)
-import Data.Time.Clock (UTCTime)
-import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import Iolaus.Database.JSON (liftJSON)
 import qualified Network.HTTP.Types.Header as HTTP
 import Sthenauth.Core.Address (Address)
+import Sthenauth.Core.Encoding
 import System.Random (randomIO)
 
 --------------------------------------------------------------------------------

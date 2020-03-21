@@ -39,7 +39,6 @@ import Data.List (minimumBy)
 import Data.PEM (pemContent)
 import Data.Profunctor (dimap)
 import Data.Profunctor.Product.Default (Default(..))
-import Data.Time.Clock (UTCTime)
 import qualified Data.X509 as X509
 import Iolaus.Crypto.PEM (decodePEM)
 import Iolaus.Database.Extra (transactionTimestamp)

@@ -20,11 +20,15 @@ module Sthenauth.Core.Capabilities
   ) where
 
 --------------------------------------------------------------------------------
+import qualified Data.Aeson as Aeson
 import qualified Data.List.NonEmpty as NonEmpty
-import Data.Set (Set)
 import qualified Data.Set as Set
+import qualified Generics.SOP as SOP
 import Sthenauth.Core.Config
+import Sthenauth.Core.CurrentUser
+import Sthenauth.Core.Encoding
 import Sthenauth.Core.Policy
+import Sthenauth.Core.Public (Session, toSession)
 import qualified Sthenauth.Providers.OIDC.Public as OIDC
 
 --------------------------------------------------------------------------------
@@ -45,14 +49,25 @@ data Capabilities = Capabilities
 
   , oidcProviders :: [OIDC.Public]
     -- ^ List of OIDC providers.
+
+  , existingSession :: Maybe Session
   }
-  deriving (Generic, Show)
+  deriving (Generic, SOP.Generic, SOP.HasDatatypeInfo, Show)
   deriving (ToJSON) via GenericJSON Capabilities
+  deriving ( HasElmType
+           , HasElmDecoder Aeson.Value
+           , HasElmEncoder Aeson.Value
+           ) via GenericElm "Capabilities" Capabilities
 
 --------------------------------------------------------------------------------
 -- | Generate a 'Capabilities' record.
-toCapabilities :: Config -> Policy -> [OIDC.Public] -> Capabilities
-toCapabilities config policy oidc =
+toCapabilities
+  :: Config
+  -> Policy
+  -> [OIDC.Public]
+  -> CurrentUser
+  -> Capabilities
+toCapabilities config policy oidc user =
   Capabilities
     { canCreateLocalAccount =
         policyAllowsLocalAccountCreation policy
@@ -66,6 +81,8 @@ toCapabilities config policy oidc =
         policy ^. (assuranceLevel.secondaryAuthenticators)
 
     , oidcProviders = oidc
+
+    , existingSession = toSession <$> sessionFromCurrentUser user
     }
 
   where

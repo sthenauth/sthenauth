@@ -29,9 +29,16 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Encoding as Aeson
 import qualified Data.ByteString.Char8 as Char8
 import Data.Profunctor.Product.Default (Default(def))
-import Database.PostgreSQL.Simple.FromField (FromField(..))
+import qualified Database.PostgreSQL.Simple.FromField as Pg
+import Language.Haskell.To.Elm as Elm
 import Network.URI (URI)
 import qualified Network.URI as URI
+
+import Database.PostgreSQL.Simple.FromField
+  ( FromField(..)
+  , ResultError(..)
+  , conversionError
+  )
 
 import Opaleye
   ( Constant(..)
@@ -54,17 +61,36 @@ instance ToJSON URL where
   toEncoding = Aeson.text . urlToText
 
 instance FromJSON URL where
-  parseJSON = Aeson.withText "URL" (maybe mzero pure . textToURL)
+  parseJSON = Aeson.withText "URL" textToURL
 
 --------------------------------------------------------------------------------
 instance FromField URL where
-  fromField f b = fromField f b >>= (maybe mzero pure . textToURL)
+  fromField f b = fromField f b >>= (textToURL >>> \case
+    Just u  -> pure u
+    Nothing -> conversionError $
+      ConversionFailed
+        { errSQLType     = "TEXT"
+        , errSQLTableOid = Pg.tableOid f
+        , errSQLField    = maybe "unk" Char8.unpack (Pg.name f)
+        , errHaskellType = "URL"
+        , errMessage     = "failed to parse URL"
+        })
 
 instance QueryRunnerColumnDefault SqlText URL where
   queryRunnerColumnDefault = fieldQueryRunnerColumn
 
 instance Default Constant URL (Column SqlText) where
   def = Constant (toFields . urlToText)
+
+--------------------------------------------------------------------------------
+instance HasElmType URL where
+  elmType = "String.String"
+
+instance HasElmEncoder Aeson.Value URL where
+  elmEncoder = "Json.Encode.string"
+
+instance HasElmDecoder Aeson.Value URL where
+  elmDecoder = "Json.Decode.string"
 
 --------------------------------------------------------------------------------
 -- | Convert a 'URL' to 'Text'.

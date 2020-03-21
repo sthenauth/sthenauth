@@ -50,7 +50,6 @@ module Sthenauth.Core.Site
 --------------------------------------------------------------------------------
 -- Imports:
 import Control.Arrow (returnA)
-import Data.Time.Clock (UTCTime)
 import qualified Data.UUID as UUID
 import Iolaus.Database.Extra
 import Iolaus.Database.Query hiding ((.?))
@@ -58,6 +57,7 @@ import Iolaus.Database.Table
 import Iolaus.Validation
 import Network.URI (URI(..), URIAuth(..))
 import qualified Opaleye as O
+import Sthenauth.Core.Encoding
 import Sthenauth.Core.Error
 import Sthenauth.Core.JWK
 import Sthenauth.Core.Policy
@@ -78,7 +78,7 @@ data SiteF f = Site
   , siteIsDefault :: Col f "is_default" Bool SqlBool Optional
     -- ^ Is this site the default site?
 
-  , afterLoginUrl :: Col f "after_login_url" URL SqlText Optional
+  , afterLoginUrl :: Col f "after_login_url" URL SqlText Required
     -- ^ Where to send users after logging in.
 
   , siteFqdn :: Col f "fqdn" Text SqlText Required
@@ -316,7 +316,7 @@ modifyPolicy site f = void . update $ O.Update
 defaultSite :: O.Select (SiteF SqlRead)
 defaultSite = proc () -> do
     t <- O.selectTable sites -< ()
-    O.restrict -< siteIsDefault t .== toFields True
+    O.restrict -< siteIsDefault t
     returnA -< t
 
 --------------------------------------------------------------------------------
@@ -341,7 +341,7 @@ checkSite
 checkSite = Site
   <$> {- Not allowed in JSON -}           pure Nothing <?> "pk"
   <*> (toFields      <$> siteIsDefault .? passthru     <?> "is_default")
-  <*> (toFields      <$> afterLoginUrl .? passthru     <?> "after_login_url")
+  <*> (toFields      <$> afterLoginUrl .: passthru     <?> "after_login_url")
   <*> (toFields      <$> siteFqdn      .: checkFQDN    <?> "fqdn")
   <*> (sqlValueJSONB <$> sitePolicy    .: checkPolicy  <?> "policy")
   <*> {- Not allowed in JSON -}           pure Nothing <?> "created_at"
@@ -366,7 +366,7 @@ siteForUI :: Site -> SiteF ForUI
 siteForUI s = Site
   { siteId        = NotAllowed ()
   , siteIsDefault = Just (siteIsDefault s)
-  , afterLoginUrl = Just (afterLoginUrl s)
+  , afterLoginUrl = afterLoginUrl s
   , siteFqdn      = siteFqdn s
   , sitePolicy    = sitePolicy s
   , siteCreatedAt = NotAllowed ()
@@ -431,9 +431,9 @@ updateSite sid ui = do
       , uWhere = \s -> siteId s .== toFields sid
       , uReturning = O.rCount
       , uUpdateWith = O.updateEasy (\s ->
-          s { siteFqdn          = siteFqdn site
-            , afterLoginUrl = fromMaybe "/" (afterLoginUrl site)
-            , siteIsDefault     = fromMaybe (toFields False) (siteIsDefault site)
+          s { siteFqdn      = siteFqdn site
+            , afterLoginUrl = afterLoginUrl site
+            , siteIsDefault = fromMaybe (toFields False) (siteIsDefault site)
             })
       }
 

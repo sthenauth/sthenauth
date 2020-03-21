@@ -42,6 +42,7 @@ import Iolaus.Database.Query
 import Iolaus.Database.Table
 import qualified Opaleye as O
 import Sthenauth.Core.Email (SafeEmail)
+import Sthenauth.Core.Encoding
 import Sthenauth.Core.Site (SiteId)
 import Sthenauth.Core.Username
 

@@ -38,6 +38,7 @@ import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Yaml as YAML
 import Iolaus.Database.Config
 import Sthenauth.CertAuth.Config (CertAuthConfig, defaultCertAuthConfig)
+import Sthenauth.Core.Encoding
 import Sthenauth.Core.Policy
 
 --------------------------------------------------------------------------------

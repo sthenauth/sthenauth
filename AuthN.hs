@@ -17,19 +17,21 @@ License: Apache-2.0
 module Sthenauth.Core.AuthN
   ( RequestAuthN(..)
   , ResponseAuthN(..)
-  , AdditionalStep(..)
+  , AdditionalAuthStep(..)
   , requestAuthN
-  , logout
 
   , OIDC.IncomingOidcProviderError(..)
   ) where
 
 --------------------------------------------------------------------------------
 -- Imports:
+import qualified Data.Aeson as Aeson
+import qualified Generics.SOP as SOP
 import Iolaus.Database.Table (getKey)
 import qualified OpenID.Connect.Client.Flow.AuthorizationCode as OIDC
 import Sthenauth.Core.Account (accountId)
 import Sthenauth.Core.CurrentUser
+import Sthenauth.Core.Encoding
 import Sthenauth.Core.Error
 import Sthenauth.Core.Event
 import Sthenauth.Core.EventDetail
@@ -55,12 +57,22 @@ data RequestAuthN
   | LoginWithOidcProvider URL OIDC.OidcLogin
   | FinishLoginWithOidcProvider URL OIDC.UserReturnFromRedirect
   | ProcessFailedOidcProviderLogin OIDC.IncomingOidcProviderError
+  | Logout
 
 --------------------------------------------------------------------------------
 data ResponseAuthN
-  = LoggedIn SetCookie PostLogin
-  | NextStep AdditionalStep
-  | LoggedOut (Maybe SetCookie)
+  = LoginFailed
+  | LoggedIn PostLogin
+  | NextStep AdditionalAuthStep
+  | LoggedOut
+
+  deriving stock (Generic, Show)
+  deriving anyclass (SOP.Generic, SOP.HasDatatypeInfo)
+  deriving (ToJSON, FromJSON) via GenericJSON ResponseAuthN
+  deriving ( HasElmType
+           , HasElmDecoder Aeson.Value
+           , HasElmEncoder Aeson.Value
+           ) via GenericElm "ResponseAuthN" ResponseAuthN
 
 --------------------------------------------------------------------------------
 -- | Authenticate a user with the given provider.
@@ -75,13 +87,13 @@ requestAuthN
   => Site
   -> Remote
   -> RequestAuthN
-  -> m ResponseAuthN
+  -> m (Maybe SetCookie, ResponseAuthN)
 requestAuthN site remote req = do
   void (logout site remote)
 
   dispatchRequest site remote req >>= \case
-    ProcessAdditionalStep step ->
-      pure (NextStep step)
+    ProcessAdditionalStep step mcookie ->
+      pure (mcookie, NextStep step)
 
     SuccessfulAuthN account status -> do
       -- Fire events
@@ -98,11 +110,11 @@ requestAuthN site remote req = do
         ]
 
       let cookie = makeSessionCookie (sessionCookieName site) key sess
-      pure (LoggedIn cookie postLogin)
+      pure (Just cookie, LoggedIn postLogin)
 
     SuccessfulLogout cookie ->
       let c = cookie <|> Just (resetSessionCookie $ sessionCookieName site)
-      in pure (LoggedOut c)
+      in pure (c, LoggedOut)
 
     FailedAuthN ue detail -> do
       user <- get
@@ -138,11 +150,12 @@ logout site remote = do
 --------------------------------------------------------------------------------
 dispatchRequest
   :: forall sig m.
-     ( Has Crypto   sig m
-     , Has Database sig m
-     , Has HTTP     sig m
-     , Has Error    sig m
-     , MonadRandom      m
+     ( Has Crypto              sig m
+     , Has Database            sig m
+     , Has HTTP                sig m
+     , Has Error               sig m
+     , Has (State CurrentUser) sig m
+     , MonadRandom                 m
      )
   => Site
   -> Remote
@@ -182,6 +195,10 @@ dispatchRequest site remote = \case
 
   ProcessFailedOidcProviderLogin failure ->
     OIDC.requestOIDC site remote (OIDC.FailedReturnFromProvider failure)
+
+  Logout -> do
+    cookie <- logout site remote
+    pure (SuccessfulLogout (Just cookie))
 
   where
     onLocalError :: Local.Credentials -> BaseError -> m ProviderResponse

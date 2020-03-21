@@ -20,6 +20,9 @@ module Sthenauth.Core.PostLogin
 
 --------------------------------------------------------------------------------
 -- Imports:
+import qualified Data.Aeson as Aeson
+import qualified Generics.SOP as SOP
+import Sthenauth.Core.Encoding
 import Sthenauth.Core.URL
 
 --------------------------------------------------------------------------------
@@ -28,4 +31,9 @@ newtype PostLogin = PostLogin
   { post_login_uri :: URL
   }
   deriving stock (Generic, Show)
+  deriving anyclass (SOP.Generic, SOP.HasDatatypeInfo)
   deriving (ToJSON, FromJSON) via GenericJSON PostLogin
+  deriving ( HasElmType
+           , HasElmEncoder Aeson.Value
+           , HasElmDecoder Aeson.Value
+           ) via GenericElm "PostLogin" PostLogin

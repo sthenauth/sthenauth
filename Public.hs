@@ -23,6 +23,9 @@ module Sthenauth.Core.Public
 
 --------------------------------------------------------------------------------
 -- Imports:
+import qualified Data.Aeson as Aeson
+import qualified Generics.SOP as SOP
+import Sthenauth.Core.Encoding
 import qualified Sthenauth.Core.Session as Session
 
 --------------------------------------------------------------------------------
@@ -33,7 +36,12 @@ data Session = Session
   , sessionUpdatedAt  :: UTCTime
   }
   deriving stock (Generic, Show)
+  deriving anyclass (SOP.Generic, SOP.HasDatatypeInfo)
   deriving (ToJSON, FromJSON) via GenericJSON Session
+  deriving ( HasElmType
+           , HasElmEncoder Aeson.Value
+           , HasElmDecoder Aeson.Value
+           ) via GenericElm "Session" Session
 
 --------------------------------------------------------------------------------
 toSession :: Session.Session -> Session

@@ -28,6 +28,7 @@ import Iolaus.Database.Query
 import qualified Opaleye as O
 import Sthenauth.Core.Capabilities
 import Sthenauth.Core.Config (Config)
+import Sthenauth.Core.CurrentUser (CurrentUser)
 import Sthenauth.Core.Error
 import Sthenauth.Core.JWK (getJWK)
 import Sthenauth.Core.Site as Site
@@ -61,11 +62,14 @@ getSitePublicKeys sid = do
 --------------------------------------------------------------------------------
 -- | Get the capabilities for a site.
 getSiteCapabilities
-  :: ( Has Database sig m
-     , Has Error    sig m
+  :: ( Has Database            sig m
+     , Has Error               sig m
+     , Has (State CurrentUser) sig m
      )
   => Config
   -> Site
   -> m Capabilities
 getSiteCapabilities config site =
-  toCapabilities config (sitePolicy site) <$> OIDC.publicProviders
+  toCapabilities config (sitePolicy site)
+    <$> OIDC.publicProviders
+    <*> get

@@ -53,8 +53,10 @@ import qualified Data.Aeson as Aeson
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 import Data.Time.Clock
+import qualified Generics.SOP as SOP
 import Iolaus.Database.JSON (liftJSON)
 import Iolaus.Validation
+import Sthenauth.Core.Encoding
 import Sthenauth.Core.Error
 import Sthenauth.Core.Provider (ProviderType(..))
 import qualified Text.Password.Strength as Zxcvbn
@@ -114,7 +116,13 @@ data Authenticator
     -- ^ Requires both 'SingleFactorCryptoSoftware' and
     -- 'MemorizedSecret'.  Needed in order to support AAL3.
 
-  deriving (Generic, Show, Eq, Ord, Enum, Bounded, ToJSON, FromJSON)
+  deriving (Generic, Show, Eq, Ord, Enum, Bounded)
+  deriving (SOP.Generic, SOP.HasDatatypeInfo)
+  deriving (ToJSON, FromJSON) via GenericJSON Authenticator
+  deriving ( HasElmType
+           , HasElmDecoder Aeson.Value
+           , HasElmEncoder Aeson.Value
+           ) via GenericElm "Authenticator" Authenticator
 
 --------------------------------------------------------------------------------
 instance ToJSONKey Authenticator where
