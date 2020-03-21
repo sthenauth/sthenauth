@@ -29,7 +29,6 @@ module Sthenauth.Providers.Local.LocalAccount
 -- Imports:
 import Iolaus.Database.Query
 import Iolaus.Database.Table (getKey)
-import Opaleye (toFields, toNullable)
 import qualified Opaleye as O
 import Sthenauth.Core.Account as Account
 import Sthenauth.Core.Email (toSafeEmail, getEmail)
@@ -73,8 +72,8 @@ toLocalAccount sid login passwd =
       , accountCreatedAt = Nothing
       , accountUpdatedAt = Nothing
       , accountSiteId    = toFields sid
-      , accountPassword  = toNullable (toFields passwd)
-      , accountUsername  = either (toNullable . toFields . getUsername)
+      , accountPassword  = O.toNullable (toFields passwd)
+      , accountUsername  = either (O.toNullable . toFields . getUsername)
                             (const O.null) (getLogin login)
       }
 

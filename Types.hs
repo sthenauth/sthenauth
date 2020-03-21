@@ -16,13 +16,16 @@ License: Apache-2.0
 -}
 module Sthenauth.Providers.Types
   ( ProviderResponse(..)
-  , AdditionalStep(..)
+  , AdditionalAuthStep(..)
   , AccountStatus(..)
   ) where
 
 --------------------------------------------------------------------------------
 -- Imports:
+import qualified Data.Aeson as Aeson
+import qualified Generics.SOP as SOP
 import Sthenauth.Core.Account (Account)
+import Sthenauth.Core.Encoding
 import Sthenauth.Core.Error
 import Sthenauth.Core.EventDetail
 import Sthenauth.Core.URL
@@ -31,7 +34,7 @@ import Web.Cookie
 --------------------------------------------------------------------------------
 -- | How a provider can respond to a request.
 data ProviderResponse
-  = ProcessAdditionalStep AdditionalStep
+  = ProcessAdditionalStep AdditionalAuthStep (Maybe SetCookie)
     -- ^ Another step in the authentication process is required.
 
   | SuccessfulAuthN Account AccountStatus
@@ -44,9 +47,17 @@ data ProviderResponse
     -- ^ The end-user failed authentication.
 
 --------------------------------------------------------------------------------
-data AdditionalStep
-  = RedirectTo URL SetCookie
+newtype AdditionalAuthStep
+  = RedirectTo URL
     -- ^ Send the end-user to the given URL, setting a cookie.
+
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (SOP.Generic, SOP.HasDatatypeInfo)
+  deriving (ToJSON, FromJSON) via GenericJSON AdditionalAuthStep
+  deriving ( HasElmType
+           , HasElmDecoder Aeson.Value
+           , HasElmEncoder Aeson.Value
+           ) via GenericElm "AdditionalAuthStep" AdditionalAuthStep
 
 --------------------------------------------------------------------------------
 -- | The status of an account being returned from authentication.

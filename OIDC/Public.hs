@@ -27,9 +27,12 @@ module Sthenauth.Providers.OIDC.Public
 
 --------------------------------------------------------------------------------
 import Control.Lens.TH (makeLenses)
+import qualified Data.Aeson as Aeson
+import qualified Generics.SOP as SOP
 import Iolaus.Database.Query
 import Iolaus.Database.Table (getKey)
 import qualified Opaleye as O
+import Sthenauth.Core.Encoding
 import Sthenauth.Core.Error
 import Sthenauth.Core.URL
 import Sthenauth.Database.Effect
@@ -43,7 +46,12 @@ data Public = Public
   , _logoUrl      :: Maybe URL
   }
   deriving stock (Generic, Show)
+  deriving anyclass (SOP.Generic, SOP.HasDatatypeInfo)
   deriving (ToJSON, FromJSON) via GenericJSON Public
+  deriving ( HasElmType
+           , HasElmEncoder Aeson.Value
+           , HasElmDecoder Aeson.Value
+           ) via GenericElm "OidcProvider" Public
 
 makeLenses ''Public
 

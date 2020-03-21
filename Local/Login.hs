@@ -29,13 +29,16 @@ module Sthenauth.Providers.Local.Login
 
 --------------------------------------------------------------------------------
 -- Imports:
+import qualified Data.Aeson as Aeson
 import Data.Profunctor.Product.Default (Default(def))
 import Database.PostgreSQL.Simple.FromField (FromField(..), fromJSONField)
+import qualified Generics.SOP as SOP
 import Iolaus.Crypto.HashedSecret (HashedSecret(..))
 import Iolaus.Crypto.Password
-import Sthenauth.Crypto.Effect
 import Sthenauth.Core.Email
+import Sthenauth.Core.Encoding
 import Sthenauth.Core.Username
+import Sthenauth.Crypto.Effect
 
 import Opaleye
   ( QueryRunnerColumnDefault(..)
@@ -101,7 +104,14 @@ fromSafeLogin (SafeLogin hs) = decrypt (encryptedSecret hs)
 data Credentials = Credentials
   { name     :: Text -- ^ Username or email address.
   , password :: Text -- ^ Clear text password.
-  } deriving (Generic, FromJSON)
+  }
+  deriving stock (Generic)
+  deriving anyclass (SOP.Generic, SOP.HasDatatypeInfo)
+  deriving (ToJSON, FromJSON) via GenericJSON Credentials
+  deriving ( HasElmType
+           , HasElmEncoder Aeson.Value
+           , HasElmDecoder Aeson.Value
+           ) via GenericElm "Credentials" Credentials
 
 --------------------------------------------------------------------------------
 -- | Turn credentials into a 'Login' and 'Password' pair.

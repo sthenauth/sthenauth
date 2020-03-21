@@ -28,6 +28,7 @@ module Sthenauth.Providers.OIDC.Known
 import Control.Lens.TH (makeLenses)
 import qualified Data.Yaml as YAML
 import qualified Paths_sthenauth as Sthenauth
+import Sthenauth.Core.Encoding
 import Sthenauth.Core.URL
 
 --------------------------------------------------------------------------------

@@ -31,6 +31,7 @@ import qualified OpenID.Connect.Client.Flow.AuthorizationCode as OIDC
 import OpenID.Connect.TokenResponse (TokenResponse)
 import qualified OpenID.Connect.TokenResponse as TR
 import Sthenauth.Core.Account
+import Sthenauth.Core.Encoding
 import Sthenauth.Core.Error
 import Sthenauth.Core.EventDetail
 import Sthenauth.Core.HTTP
@@ -119,7 +120,7 @@ startProviderLogin site remote url (OidcLogin uuid) = do
       Right (OIDC.RedirectTo uri cookief) -> do
         let cookie = cookief (encodeUtf8 (oidcCookieName site))
         saveCookie provider cookie
-        pure (ProcessAdditionalStep (RedirectTo (URL uri) cookie))
+        pure (ProcessAdditionalStep (RedirectTo (URL uri)) (Just cookie))
 
   where
     fetchProvider :: m Provider
