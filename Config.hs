@@ -35,6 +35,7 @@ import Control.Lens.TH (makeLenses)
 import Control.Monad.Crypto.Cryptonite
 import Data.Aeson ((.:?), (.!=))
 import qualified Data.Aeson as Aeson
+import Sthenauth.Core.Encoding
 
 --------------------------------------------------------------------------------
 -- | Number of months that a certificate is valid.

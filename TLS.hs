@@ -25,7 +25,6 @@ module Sthenauth.CertAuth.TLS
 import Control.Carrier.Database hiding (Runtime)
 import Control.Carrier.Error.Either hiding (Error)
 import Control.Concurrent.MVar (modifyMVar)
-import Control.Concurrent.STM (writeTVar)
 import Control.Exception (throwIO)
 import Data.Default.Class (def)
 import Data.Time.Clock (getCurrentTime)
