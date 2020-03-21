@@ -45,6 +45,7 @@ import Sthenauth.Core.Error
 import Sthenauth.Core.Policy (defaultPolicy)
 import Sthenauth.Core.Runtime
 import Sthenauth.Core.Site as Site
+import Sthenauth.Core.URL
 import Sthenauth.Crypto.Carrier (CryptoC, runCrypto)
 import qualified Sthenauth.Crypto.Carrier as Crypto
 import Sthenauth.Crypto.Effect
@@ -242,12 +243,14 @@ initDatabase opts dataDir now cfg = do
 
     siteQuery :: InitC ()
     siteQuery = do
+      url <- maybe (error "bad hard-coded after_login_url") pure
+        (textToURL "https://localhost/")
       let site = Site
             { siteId        = mempty
             , siteCreatedAt = mempty
             , siteUpdatedAt = mempty
             , siteIsDefault = Just True
-            , afterLoginUrl = Nothing
+            , afterLoginUrl = url
             , siteFqdn      = "localhost"
             , sitePolicy    = defaultPolicy
             }

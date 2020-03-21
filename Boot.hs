@@ -40,6 +40,7 @@ import System.PosixCompat.Files (setFileCreationMask)
 --------------------------------------------------------------------------------
 -- Sub-commands:
 import qualified Sthenauth.Shell.Admin as Admin
+import qualified Sthenauth.Shell.Elm as Elm
 import qualified Sthenauth.Shell.Info as Info
 import qualified Sthenauth.Shell.Policy as Policy
 import qualified Sthenauth.Shell.Provider as Provider
@@ -50,6 +51,7 @@ import qualified Sthenauth.Shell.Site as Site
 -- | The various commands that can be executed.
 data Commands
   = AdminCommand Admin.Action
+  | ElmCommand Elm.Options
   | InfoCommand
   | InitCommand
   | PolicyCommand Policy.SubCommand
@@ -65,7 +67,7 @@ data RunCommandWith
 --------------------------------------------------------------------------------
 -- Command line parser for each command.
 instance IsCommand Commands where
-  parseCommand = hsubparser $ mconcat
+  parseCommand = hsubparser (mconcat
     [ cmd "admin" "Manage admin accounts" (AdminCommand <$> Admin.options)
     , cmd "info" "Display evaluated config" (pure InfoCommand)
     , cmd "init" "Interactive system initialization" (pure InitCommand)
@@ -73,10 +75,16 @@ instance IsCommand Commands where
     , cmd "provider" "Manage authentication providers" (ProviderCommand <$> Provider.options)
     , cmd "server" "Start the HTTP server" (pure ServerCommand)
     , cmd "site" "Manage site settings" (SiteCommand <$> Site.options)
-    ]
+    ]) <|> internalCommands
     where
       cmd :: String -> String -> Parser a -> Mod CommandFields a
       cmd name desc p = command name (info p (progDesc desc))
+
+      -- Internal commands that are hidden from the main --help display:
+      internalCommands = hsubparser $ mconcat
+        [ cmd "elm" "Generate UI Elm files" (ElmCommand <$> Elm.options)
+        , internal
+        ]
 
 --------------------------------------------------------------------------------
 -- | Main entry point.
@@ -133,6 +141,7 @@ main = do
     dispatch options renv =
       case Options.command options of
         AdminCommand o    -> RunCommand (Admin.main o)
+        ElmCommand o      -> RunIO (Elm.main o)
         InfoCommand       -> RunCommand (Info.main options)
         InitCommand       -> RunIO (initInteractive options renv)
         PolicyCommand o   -> RunCommand (Policy.main o)
@@ -146,6 +155,7 @@ enableImplicitOptions :: Options Commands -> Options Commands
 enableImplicitOptions input =
   case Options.command input of
     AdminCommand _    -> input
+    ElmCommand _      -> input
     InfoCommand       -> input
     InitCommand       -> input { Options.init = True, Options.migrate = True }
     PolicyCommand _   -> input

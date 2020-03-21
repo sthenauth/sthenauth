@@ -68,7 +68,7 @@ authenticate opts site remote =
     auth :: Text -> Text -> m ClearSessionKey
     auth n p = A.requestAuthN site remote
       (A.LoginWithLocalCredentials (Credentials n p)) >>= \case
-        A.LoggedIn cookie _ -> pure (ClearSessionKey $ decodeUtf8 $ setCookieValue cookie)
+        (Just c, A.LoggedIn _) -> pure (ClearSessionKey $ decodeUtf8 $ setCookieValue c)
         _ -> throwUserError (AuthenticationFailedError Nothing)
 
     login :: Maybe (Text, Text) -> m ClearSessionKey

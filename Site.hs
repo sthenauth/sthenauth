@@ -56,5 +56,5 @@ main actions = do
   updateSite (siteId site)
     ((siteForUI site)
       { siteFqdn = fromMaybe (siteFqdn site) (setFqdn actions)
-      , afterLoginUrl = setAfterLoginUrl actions <|> Just (afterLoginUrl site)
+      , afterLoginUrl = fromMaybe (afterLoginUrl site) (setAfterLoginUrl actions)
       })
