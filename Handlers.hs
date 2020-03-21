@@ -23,7 +23,6 @@ module Sthenauth.API.Handlers
 --------------------------------------------------------------------------------
 -- Imports:
 import qualified Control.Monad.Except as CME
-import Data.ByteString.Builder (toLazyByteString)
 import Data.List (lookup)
 import qualified OpenID.Connect.Client.Flow.AuthorizationCode as OIDC
 import Servant.API
@@ -34,9 +33,8 @@ import Sthenauth.Core.Action
 import Sthenauth.Core.AuthN
 import Sthenauth.Core.CurrentUser
 import Sthenauth.Core.Info
-import Sthenauth.Core.PostLogin
 import qualified Sthenauth.Core.Public as Public
-import Sthenauth.Core.Site (siteId, siteURL, pathToSiteUrl, oidcCookieName)
+import Sthenauth.Core.Site (siteId, pathToSiteUrl, oidcCookieName)
 import Sthenauth.Core.URL
 import qualified Web.Cookie as WC
 
@@ -76,11 +74,7 @@ localLogin = executeAuthN . LoginWithLocalCredentials
 
 --------------------------------------------------------------------------------
 globalLogout :: ServerT GlobalLogout (Action Handler)
-globalLogout = do
-  site <- asks currentSite
-  remote <- asks currentRemote
-  cookie <- logout site remote
-  pure (addHeader cookie ())
+globalLogout = executeAuthN Logout
 
 --------------------------------------------------------------------------------
 createLocalAccount :: ServerT CreateLocalAccount (Action Handler)
@@ -105,7 +99,7 @@ oidcReturnSucc codeQp stateQp (Cookies cookies) = do
   redir <- oidcRedirectURL
 
   case lookup (encodeUtf8 $ oidcCookieName site) (WC.parseCookies cookies) of
-    Nothing -> redirectToSiteURL Nothing
+    Nothing -> pure (noHeader LoginFailed)
     Just bs ->
       executeAuthN $ FinishLoginWithOidcProvider redir $
         OIDC.UserReturnFromRedirect
@@ -120,7 +114,7 @@ oidcReturnFail errQp errdQp (Cookies cookies) = do
   site <- asks currentSite
 
   case lookup (encodeUtf8 $ oidcCookieName site) (WC.parseCookies cookies) of
-    Nothing -> redirectToSiteURL Nothing
+    Nothing -> pure (noHeader LoginFailed)
     Just bs ->
       executeAuthN . ProcessFailedOidcProviderLogin $
         IncomingOidcProviderError
@@ -138,36 +132,13 @@ oidcRedirectURL = do
   pure (pathToSiteUrl ("/" <> uriPath uri) site)
 
 --------------------------------------------------------------------------------
-executeAuthN :: RequestAuthN -> Action Handler (SetCookie PostLogin)
+executeAuthN :: RequestAuthN -> Action Handler (SetCookie ResponseAuthN)
 executeAuthN req = do
-  site <- asks currentSite
-  remote <- asks currentRemote
-  dischargeMonadRandom (requestAuthN site remote req) >>= \case
-    LoggedIn cookie postLogin -> pure (addHeader cookie postLogin)
-    LoggedOut cookie -> redirectToSiteURL cookie
-    NextStep step -> lift (processNextStep step)
-
---------------------------------------------------------------------------------
-processNextStep :: AdditionalStep -> Handler a
-processNextStep = \case
-  RedirectTo url cookie -> redirectToURL url (Just cookie)
-
---------------------------------------------------------------------------------
-redirectToSiteURL :: Maybe WC.SetCookie -> Action Handler a
-redirectToSiteURL cookie = do
-  site <- asks currentSite
-  lift (redirectToURL (siteURL site) cookie)
-
---------------------------------------------------------------------------------
-redirectToURL :: URL -> Maybe WC.SetCookie -> Handler a
-redirectToURL url cookie =
-  CME.throwError $ err302
-    { errHeaders = catMaybes
-        [ Just ("Location", urlToByteString url)
-        , ("Set-Cookie",) . hdrFromCookie <$> cookie
-        ]
-    }
-
---------------------------------------------------------------------------------
-hdrFromCookie :: WC.SetCookie -> ByteString
-hdrFromCookie = toStrict . toLazyByteString . WC.renderSetCookie
+    site <- asks currentSite
+    remote <- asks currentRemote
+    (mc, res) <- dischargeMonadRandom (requestAuthN site remote req)
+    pure (addCookieHeader mc res)
+  where
+    addCookieHeader :: Maybe WC.SetCookie -> a -> SetCookie a
+    addCookieHeader Nothing = noHeader
+    addCookieHeader (Just c) = addHeader c

@@ -36,9 +36,9 @@ module Sthenauth.API.Routes
 --------------------------------------------------------------------------------
 -- Imports:
 import Servant.API
+import Sthenauth.Core.AuthN
 import Sthenauth.Core.Capabilities
 import Sthenauth.Core.JWK
-import Sthenauth.Core.PostLogin
 import qualified Sthenauth.Core.Public as Public
 import Sthenauth.Providers.Local.Login
 import qualified Sthenauth.Providers.OIDC.AuthN as OIDC
@@ -76,24 +76,24 @@ type GetSession
 type CreateLocalAccount
   = "create"
   :> ReqBody '[JSON] Credentials
-  :> Post '[JSON] (SetCookie PostLogin)
+  :> Post '[JSON] (SetCookie ResponseAuthN)
 
 --------------------------------------------------------------------------------
 type LocalLogin
   = "login"
   :> ReqBody '[JSON] Credentials
-  :> Post '[JSON] (SetCookie PostLogin)
+  :> Post '[JSON] (SetCookie ResponseAuthN)
 
 --------------------------------------------------------------------------------
 type GlobalLogout
   = "logout"
-  :> Delete '[JSON] (SetCookie ())
+  :> Delete '[JSON] (SetCookie ResponseAuthN)
 
 --------------------------------------------------------------------------------
 type OidcLogin
   = "login"
   :> ReqBody '[JSON] OIDC.OidcLogin
-  :> Post '[JSON] (SetCookie PostLogin)
+  :> Post '[JSON] (SetCookie ResponseAuthN)
 
 --------------------------------------------------------------------------------
 type OidcReturnSucc
@@ -101,7 +101,7 @@ type OidcReturnSucc
   :> QueryParam' '[Required, Strict] "code" Text
   :> QueryParam' '[Required, Strict] "state" Text
   :> Header' '[Required, Strict] "cookie" Cookies
-  :> Get '[JSON] (SetCookie PostLogin)
+  :> Get '[JSON] (SetCookie ResponseAuthN)
 
 --------------------------------------------------------------------------------
 type OidcReturnFail
@@ -109,7 +109,7 @@ type OidcReturnFail
   :> QueryParam' '[Required, Strict] "error" Text
   :> QueryParam "error_description" Text
   :> Header' '[Required, Strict] "cookie" Cookies
-  :> Get '[JSON] (SetCookie PostLogin)
+  :> Get '[JSON] (SetCookie ResponseAuthN)
 
 --------------------------------------------------------------------------------
 type OidcAPI
