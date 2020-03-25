@@ -28,6 +28,7 @@ import Options.Applicative
 import Sthenauth.CertAuth.Carrier (initCertAuth)
 import Sthenauth.Core.Config
 import Sthenauth.Core.Error
+import Sthenauth.Core.HTTP (initHTTP)
 import Sthenauth.Core.Runtime
 import Sthenauth.Crypto.Carrier (getCryptonite)
 import Sthenauth.Shell.Command
@@ -114,11 +115,15 @@ main = do
   -- Initialize the database.
   db <- DB.initRuntime (cfg ^. database) Nothing
 
+  -- Initialize the HTTP client.
+  httpR <- initHTTP
+
   let renv = Runtime
         { rtConfig   = cfg
         , rtDb       = db
         , rtCrypto   = crypto
         , rtCertAuth = initCertAuth (cfg ^. certAuth) (getCryptonite crypto)
+        , rtHttp     = httpR
         }
 
   -- Now that we have a fully constructed environment, run the
