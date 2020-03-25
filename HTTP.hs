@@ -22,18 +22,19 @@ module Sthenauth.Core.HTTP
   , http
 
   , HttpC
+  , HttpR
+  , initHTTP
   , runHTTP
   ) where
 
 --------------------------------------------------------------------------------
 -- Imports:
-import Network.HTTP.Client.TLS (newTlsManager)
-
 import Control.Algebra
 import Control.Carrier.Reader
 import Control.Exception.Safe (try)
 import Network.HTTP.Client (Request, Response)
 import qualified Network.HTTP.Client as HTTP
+import Network.HTTP.Client.TLS (newTlsManager)
 import Sthenauth.Core.Error
 
 -------------------------------------------------------------------------------
@@ -54,23 +55,30 @@ http :: Has HTTP sig m => Client m
 http = send . (`HTTP` pure)
 
 --------------------------------------------------------------------------------
+-- | Internal HTTP runtime value.
+newtype HttpR = Runtime HTTP.Manager
+
+--------------------------------------------------------------------------------
 -- | A carrier for the HTTP effect.
 newtype HttpC m a = HttpC
-  { runHttpC :: ReaderC HTTP.Manager m a }
+  { runHttpC :: ReaderC HttpR m a }
   deriving newtype (Functor, Applicative, Monad, MonadIO, MonadTrans)
 
 instance (MonadIO m, Has Error sig m) => Algebra (HTTP :+: sig) (HttpC m) where
   alg = \case
     R other -> HttpC (alg (R (handleCoercible other)))
     L (HTTP req k) -> do
-      mgr <- HttpC ask
+      Runtime mgr <- HttpC ask
       liftIO (try (HTTP.httpLbs req mgr)) >>= \case
         Left e  -> throwError (HttpException e)
         Right r -> k r
 
 --------------------------------------------------------------------------------
+-- | Initialize a runtime value for the HTTP effect.
+initHTTP :: MonadIO m => m HttpR
+initHTTP = Runtime <$> newTlsManager
+
+--------------------------------------------------------------------------------
 -- | Discharge the HTTP effect.
-runHTTP :: MonadIO m => HttpC m a -> m a
-runHTTP h = do
-  mgr <- newTlsManager
-  runReader mgr (runHttpC h)
+runHTTP :: HttpR -> HttpC m a -> m a
+runHTTP r = runReader r . runHttpC

@@ -23,6 +23,7 @@ module Sthenauth.Core.Runtime
 import qualified Control.Monad.Database as DB
 import Sthenauth.CertAuth.Carrier (CertAuthEnv)
 import Sthenauth.Core.Config
+import Sthenauth.Core.HTTP
 import qualified Sthenauth.Crypto.Carrier as Crypto
 
 --------------------------------------------------------------------------------
@@ -32,4 +33,5 @@ data Runtime = Runtime
   , rtDb        :: DB.Runtime
   , rtCrypto    :: Crypto.Runtime
   , rtCertAuth  :: CertAuthEnv
+  , rtHttp      :: HttpR
   }

@@ -115,10 +115,9 @@ dischargeMonadRandom (ActionM k) = do
     Right (u, a) -> put u $> a
 
 --------------------------------------------------------------------------------
--- | Execute a action inside 'MonadIO'.
+-- | Execute a action.
 runAction
-  :: MonadIO m
-  => Runtime
+  :: Runtime
   -> Site
   -> Remote
   -> CurrentUser
@@ -130,6 +129,6 @@ runAction env site remote user script
   & runState user
   & runDatabase (rtDb env)
   & runCrypto (rtCrypto env)
-  & runHTTP
+  & runHTTP (rtHttp env)
   & runError
   & runM
