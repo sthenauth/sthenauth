@@ -31,15 +31,19 @@ module Sthenauth.API.Routes
   , FinalAPI
   , api
   , finalapi
+  , oidcRedirectURL
   ) where
 
 --------------------------------------------------------------------------------
 -- Imports:
 import Servant.API
+import Servant.Links
 import Sthenauth.Core.AuthN
 import Sthenauth.Core.Capabilities
 import Sthenauth.Core.JWK
 import qualified Sthenauth.Core.Public as Public
+import Sthenauth.Core.Site (Site)
+import Sthenauth.Core.URL
 import Sthenauth.Providers.Local.Login
 import qualified Sthenauth.Providers.OIDC.AuthN as OIDC
 import qualified Web.Cookie as WC
@@ -141,3 +145,11 @@ type FinalAPI = TopPath :> Vault :> (API :<|> Raw)
 -- | The proxy value for the final API.
 finalapi :: Proxy FinalAPI
 finalapi = Proxy
+
+--------------------------------------------------------------------------------
+oidcRedirectURL :: Site -> URL
+oidcRedirectURL site =
+  let done = Proxy :: Proxy ("auth" :> "oidc" :> OidcReturnSucc)
+      uri  = linkURI (safeLink api done mempty mempty)
+      path = "/" <> toText (uriPath uri)
+  in site ^. url & urlPath .~ path
