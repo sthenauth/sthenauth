@@ -40,9 +40,11 @@ import qualified Data.Aeson as Aeson
 import Data.Aeson.Lens (_String, _Bool)
 import Data.HashMap.Strict as Hash
 import Data.Time.Clock
+import Iolaus.Database.JSON
 import Iolaus.Database.Query
 import Iolaus.Database.Table
 import qualified Opaleye as O
+import OpenID.Connect.Scope (Scope, scopeFromWords)
 import OpenID.Connect.TokenResponse (TokenResponse)
 import qualified OpenID.Connect.TokenResponse as TR
 import Sthenauth.Core.Account
@@ -69,6 +71,9 @@ data OidcAccountF f = OidcAccount
 
   , oauthAccessToken :: Col f "access_token" (Secret Text) SqlJsonb Required
     -- ^ The access token that was issued.
+
+  , oauthAccessScope :: Col f "access_scope" (LiftJSON Scope) SqlJsonb Required
+    -- ^ The scope that was granted by the provider.
 
   , oauthRefreshToken :: Col f "refresh_token" (Secret Text) SqlJsonb Nullable
     -- ^ Optional refresh token to get a new access token.
@@ -144,6 +149,7 @@ fromTokenAndSubject
 fromTokenAndSubject pid time token sub = do
   let aexp = addUTCTime (fromIntegral (fromMaybe 3600 (TR.expiresIn token))) time
       iexp = maybe aexp coerce (TR.idToken token ^. JWT.claimExp)
+      scope = maybe "none" scopeFromWords (TR.scope token)
   accesst <- encrypt (TR.accessToken token)
   refresht <- traverse encrypt (TR.refreshToken token)
   idt <- encrypt (BinaryClaimsSet (TR.idToken token))
@@ -153,6 +159,7 @@ fromTokenAndSubject pid time token sub = do
       , accountProviderId    = toFields pid
       , foreignAccountId     = toFields sub
       , oauthAccessToken     = toFields accesst
+      , oauthAccessScope     = toFields (LiftJSON scope)
       , oauthRefreshToken    = toFields refresht
       , oauthTokenType       = toFields (TR.tokenType token)
       , identityToken        = toFields idt

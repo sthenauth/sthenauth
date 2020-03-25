@@ -24,6 +24,8 @@ module Sthenauth.Providers.OIDC.AuthN
 --------------------------------------------------------------------------------
 -- Imports:
 import Crypto.JWT (ClaimsSet)
+import qualified Data.Aeson as Aeson
+import qualified Generics.SOP as SOP
 import Iolaus.Database.JSON
 import Iolaus.Database.Query
 import Iolaus.Database.Table (Key(..))
@@ -61,7 +63,12 @@ newtype OidcLogin = OidcLogin
   { remoteProviderId :: UUID
   }
   deriving stock (Generic, Show)
+  deriving anyclass (SOP.Generic, SOP.HasDatatypeInfo)
   deriving (ToJSON, FromJSON) via GenericJSON OidcLogin
+  deriving ( HasElmType
+           , HasElmEncoder Aeson.Value
+           , HasElmDecoder Aeson.Value
+           ) via GenericElm "OidcLogin" OidcLogin
 
 --------------------------------------------------------------------------------
 -- | Requests that can be processed by this module.
@@ -120,7 +127,7 @@ startProviderLogin site remote url (OidcLogin uuid) = do
       Right (OIDC.RedirectTo uri cookief) -> do
         let cookie = cookief (encodeUtf8 (oidcCookieName site))
         saveCookie provider cookie
-        pure (ProcessAdditionalStep (RedirectTo (URL uri)) (Just cookie))
+        pure (ProcessAdditionalStep (RedirectTo (urlFromURI uri)) (Just cookie))
 
   where
     fetchProvider :: m Provider

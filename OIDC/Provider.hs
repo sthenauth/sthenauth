@@ -74,7 +74,7 @@ data ProviderF f = Provider
   , providerName :: Col f "provider_name" Text SqlText Required
     -- ^ The display name of the remote provider.
 
-  , providerLogoUrl :: Col f "logo_url" URL SqlText Nullable
+  , providerLogoUrl :: Col f "logo_url" URL SqlText Required
     -- ^ A URL where a logo for the provider can be fetched from.
 
   , providerClientId :: Col f "client_id" Text SqlText Required

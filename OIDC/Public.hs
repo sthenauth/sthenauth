@@ -43,7 +43,7 @@ import qualified Sthenauth.Providers.OIDC.Provider as OIDC
 data Public = Public
   { _providerId   :: UUID
   , _providerName :: Text
-  , _logoUrl      :: Maybe URL
+  , _logoUrl      :: URL
   }
   deriving stock (Generic, Show)
   deriving anyclass (SOP.Generic, SOP.HasDatatypeInfo)
@@ -54,6 +54,9 @@ data Public = Public
            ) via GenericElm "OidcProvider" Public
 
 makeLenses ''Public
+
+instance HasURL Public where
+  url = logoUrl
 
 --------------------------------------------------------------------------------
 -- | Create a public record from an OIDC provider.
