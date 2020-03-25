@@ -35,6 +35,7 @@ import Sthenauth.Core.Policy (Authenticator)
 import Sthenauth.Core.PostLogin (PostLogin)
 import Sthenauth.Core.Public (Session)
 import Sthenauth.Providers.Local.Login (Credentials)
+import Sthenauth.Providers.OIDC.AuthN (OidcLogin)
 import qualified Sthenauth.Providers.OIDC.Public as OIDC
 import Sthenauth.Providers.Types (AdditionalAuthStep)
 import System.Directory
@@ -71,6 +72,7 @@ main Options{..} = do
         , Elm.jsonDefinitions @Capabilities
         , Elm.jsonDefinitions @Credentials
         , Elm.jsonDefinitions @OIDC.Public
+        , Elm.jsonDefinitions @OidcLogin
         , Elm.jsonDefinitions @PostLogin
         , Elm.jsonDefinitions @ResponseAuthN
         , Elm.jsonDefinitions @Session

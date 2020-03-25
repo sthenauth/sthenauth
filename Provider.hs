@@ -25,7 +25,6 @@ module Sthenauth.Shell.Provider
 import Control.Lens (folded, filtered, firstOf)
 import Iolaus.Database.JSON
 import Iolaus.Database.Query
-import qualified Opaleye as O
 import Options.Applicative as Options
 import Sthenauth.Core.Error
 import Sthenauth.Core.HTTP
@@ -132,7 +131,7 @@ registerOidcProvider = \case
             { providerId                 = Nothing
             , providerEnabled            = toFields True
             , providerName               = toFields (kp ^. K.providerName)
-            , providerLogoUrl            = O.toNullable (toFields (kp ^. K.logoUrl))
+            , providerLogoUrl            = toFields (kp ^. K.logoUrl)
             , providerClientId           = toFields (oidcClientId oci)
             , providerClientSecret       = toFields safeClientSecret
             , providerDiscoveryUrl       = toFields (kp ^. K.discoveryUrl)
