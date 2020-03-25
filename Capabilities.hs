@@ -28,6 +28,7 @@ import Sthenauth.Core.Config
 import Sthenauth.Core.CurrentUser
 import Sthenauth.Core.Encoding
 import Sthenauth.Core.Policy
+import Sthenauth.Core.Provider
 import Sthenauth.Core.Public (Session, toSession)
 import qualified Sthenauth.Providers.OIDC.Public as OIDC
 
@@ -38,6 +39,9 @@ import qualified Sthenauth.Providers.OIDC.Public as OIDC
 data Capabilities = Capabilities
   { canCreateLocalAccount :: Bool
     -- ^ Whether or not users can create their own local accounts.
+
+  , canLoginWithLocalAccount :: Bool
+    -- ^ Whether or not users can login with local accounts.
 
   , localPrimaryAuthenticators :: Set Authenticator
     -- ^ When authenticating for a local account, which authenticators
@@ -72,6 +76,9 @@ toCapabilities config policy oidc user =
     { canCreateLocalAccount =
         policyAllowsLocalAccountCreation policy
 
+    , canLoginWithLocalAccount =
+        policyAllowsLocalAccountLogin policy
+
     , localPrimaryAuthenticators =
         let x = toS $ policy ^. (assuranceLevel.primaryAuthenticators)
             y = toS $ enabledAuthenticators config
@@ -80,7 +87,10 @@ toCapabilities config policy oidc user =
     , localSecondaryAuthenticators =
         policy ^. (assuranceLevel.secondaryAuthenticators)
 
-    , oidcProviders = oidc
+    , oidcProviders =
+        if policyAllowsProviderType OidcProvider policy
+          then oidc
+          else []
 
     , existingSession = toSession <$> sessionFromCurrentUser user
     }

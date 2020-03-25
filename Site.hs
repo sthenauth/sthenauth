@@ -37,8 +37,6 @@ module Sthenauth.Core.Site
   , checkSite
   , validateSite
   , siteForUI
-  , siteURL
-  , pathToSiteUrl
   , postLogin
   , insertSite
   , updateSite
@@ -55,13 +53,13 @@ import Iolaus.Database.Extra
 import Iolaus.Database.Query hiding ((.?))
 import Iolaus.Database.Table
 import Iolaus.Validation
-import Network.URI (URI(..), URIAuth(..))
 import qualified Opaleye as O
 import Sthenauth.Core.Encoding
 import Sthenauth.Core.Error
 import Sthenauth.Core.JWK
 import Sthenauth.Core.Policy
 import Sthenauth.Core.PostLogin
+import Sthenauth.Core.Remote (Remote, requestFqdn)
 import Sthenauth.Core.URL
 import Sthenauth.Crypto.Effect
 import Sthenauth.Database.Effect
@@ -104,6 +102,21 @@ makeTable ''SiteF "sites"
 --------------------------------------------------------------------------------
 -- | Monomorphic site.
 type Site = SiteF ForHask
+
+--------------------------------------------------------------------------------
+instance HasURL Site where
+  url = lens getter setter
+    where
+      getter :: Site -> URL
+      getter = urlFromFQDN . siteFqdn
+
+      setter :: Site -> URL -> Site
+      setter s u = s { siteFqdn = u ^. urlDomain }
+
+--------------------------------------------------------------------------------
+-- | Create post-login instructions for the UI.
+postLogin :: Site -> Remote -> PostLogin
+postLogin s r = PostLogin (afterLoginUrl s & urlDomain .~ (r ^. requestFqdn))
 
 --------------------------------------------------------------------------------
 -- | Primary key on the @site_aliases@ table.
@@ -372,29 +385,6 @@ siteForUI s = Site
   , siteCreatedAt = NotAllowed ()
   , siteUpdatedAt = NotAllowed ()
   }
-
---------------------------------------------------------------------------------
--- | Construct a URI from a site.
-siteURL :: Site -> URL
-siteURL s = URL $ URI
-  { uriScheme = "https:"
-  , uriAuthority = Just (URIAuth "" (toString (siteFqdn s)) "")
-  , uriPath = "/"
-  , uriQuery = ""
-  , uriFragment = ""
-  }
-
---------------------------------------------------------------------------------
--- | Get a URL back to this site that includes the given path.
-pathToSiteUrl :: String -> Site -> URL
-pathToSiteUrl path site =
-  let (URL uri) = siteURL site
-  in URL (uri { uriPath = path })
-
---------------------------------------------------------------------------------
--- | Create post-login instructions for the UI.
-postLogin :: Site -> PostLogin
-postLogin s = PostLogin (afterLoginUrl s)
 
 --------------------------------------------------------------------------------
 -- | Try to insert a new site into the database.

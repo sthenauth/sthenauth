@@ -17,18 +17,27 @@ URL handling.
 
 -}
 module Sthenauth.Core.URL
-  ( URL(..)
+  ( URL
+  , HasURL(..)
+  , getURI
   , urlToText
   , urlToByteString
   , textToURL
   , strToURL
+  , urlFromFQDN
+  , urlFromURI
+  , localhostTo
+  , urlDomain
+  , urlPath
   ) where
 
 --------------------------------------------------------------------------------
+-- Imports:
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Encoding as Aeson
 import qualified Data.ByteString.Char8 as Char8
 import Data.Profunctor.Product.Default (Default(def))
+import qualified Data.Text as Text
 import qualified Database.PostgreSQL.Simple.FromField as Pg
 import Language.Haskell.To.Elm as Elm
 import Network.URI (URI)
@@ -51,9 +60,17 @@ import Opaleye
 
 --------------------------------------------------------------------------------
 -- | A wrapper around "Network.URI".
-newtype URL = URL
-  { getURI :: URI }
-  deriving (Show, Eq) via URI
+data URL
+  = URL URI
+  | Path Text
+  deriving (Show, Eq)
+
+--------------------------------------------------------------------------------
+class HasURL a where
+  url :: Lens' a URL
+
+instance HasURL URL where
+  url = id
 
 --------------------------------------------------------------------------------
 instance ToJSON URL where
@@ -93,18 +110,32 @@ instance HasElmDecoder Aeson.Value URL where
   elmDecoder = "Json.Decode.string"
 
 --------------------------------------------------------------------------------
+-- | Extract a URI from a URL.
+getURI :: URL -> URI
+getURI = \case
+  URL uri -> uri
+  Path p0  ->
+    let (p1, frag)  = Text.span (/= '#') p0
+        (p2, query) = Text.span (/= '?') p1
+    in URI.URI "https:" (Just $ URI.URIAuth "" "localhost" "")
+      (toString p2) (toString query) (toString frag)
+
+--------------------------------------------------------------------------------
 -- | Convert a 'URL' to 'Text'.
 urlToText :: URL -> Text
-urlToText (URL uri) = toText (URI.uriToString id uri [])
+urlToText url = toText (URI.uriToString id (getURI url) [])
 
 --------------------------------------------------------------------------------
 -- | Convert a 'URL' to a 'ByteString'.
 urlToByteString :: URL -> ByteString
-urlToByteString (URL uri) = Char8.pack (URI.uriToString id uri [])
+urlToByteString url = Char8.pack (URI.uriToString id (getURI url) [])
 
 --------------------------------------------------------------------------------
 -- | Convert a 'String' value to a 'URL'.
 strToURL :: MonadPlus m => String -> m URL
+strToURL ('/':cs) = case cs of
+  ('/':cs') -> strToURL ("https://" <> cs') -- //host/path is a valid URI.
+  _ -> pure (Path $ toText ('/':cs))        -- Just a path.
 strToURL s = case URI.parseURI s of
   Nothing -> mzero
   Just u  -> pure (URL u)
@@ -113,3 +144,65 @@ strToURL s = case URI.parseURI s of
 -- | Convert a 'Text' value to a 'URL'.
 textToURL :: MonadPlus m => Text -> m URL
 textToURL = strToURL . toString
+
+--------------------------------------------------------------------------------
+-- | Build a simple URL from just a hostname.
+urlFromFQDN :: Text -> URL
+urlFromFQDN host = URL $ URI.URI
+  { uriScheme    = "https:"
+  , uriAuthority = Just (URI.URIAuth "" (toString host) "")
+  , uriPath      = "/"
+  , uriQuery     = ""
+  , uriFragment  = ""
+  }
+
+--------------------------------------------------------------------------------
+-- | Create a 'URL' from a previously validated URI.
+urlFromURI :: URI -> URL
+urlFromURI = URL
+
+--------------------------------------------------------------------------------
+-- | If the URL refers to @localhost@ replace it with the given FQDN.
+--
+-- This is needed when the URL is just a simple path.  In that case
+-- the generated URL uses @localhost@ as the domain.
+localhostTo :: HasURL a => Text -> a -> a
+localhostTo host = urlDomain %~ \t -> bool t host (t == "localhost")
+
+--------------------------------------------------------------------------------
+-- | A lens over the domain name of a URL.
+urlDomain :: HasURL a => Lens' a Text
+urlDomain = url . lens getter setter
+  where
+    getter :: URL -> Text
+    getter = getURI
+         >>> URI.uriAuthority
+         >>> maybe "" (URI.uriRegName >>> toText)
+
+    setter :: URL -> Text -> URL
+    setter url name =
+      let uri = getURI url in URL $
+      case URI.uriAuthority (getURI url) of
+        Nothing ->
+          uri { URI.uriAuthority =
+                Just (URI.URIAuth "" (toString name) "")
+              }
+        Just auth  ->
+          uri { URI.uriAuthority =
+                Just $ auth { URI.uriRegName = toString name }
+              }
+
+--------------------------------------------------------------------------------
+-- | A lens over the path of a URL.
+urlPath :: HasURL a => Lens' a Text
+urlPath = url . lens getter setter
+  where
+    getter :: URL -> Text
+    getter = \case
+      URL uri -> toText (URI.uriPath uri)
+      Path p  -> p
+
+    setter :: URL -> Text -> URL
+    setter = \case
+      URL uri -> \t -> URL (uri { URI.uriPath = toString t })
+      Path _  -> Path

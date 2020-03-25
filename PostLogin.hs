@@ -28,7 +28,7 @@ import Sthenauth.Core.URL
 --------------------------------------------------------------------------------
 -- | Information for a UI about what to do after a user logs in.
 newtype PostLogin = PostLogin
-  { post_login_uri :: URL
+  { postLoginUrl :: URL
   }
   deriving stock (Generic, Show)
   deriving anyclass (SOP.Generic, SOP.HasDatatypeInfo)

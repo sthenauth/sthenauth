@@ -165,6 +165,7 @@ dispatchRequest site remote = \case
   LoginWithLocalCredentials creds -> do
     assertPolicyRules (sitePolicy site)
       [ policyAllowsProviderType LocalProvider
+      , policyAllowsLocalAccountLogin
       ]
     catchError (Local.authenticate site remote creds)
                (onLocalError creds)

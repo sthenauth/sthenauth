@@ -31,7 +31,9 @@ import Sthenauth.Core.Config (Config)
 import Sthenauth.Core.CurrentUser (CurrentUser)
 import Sthenauth.Core.Error
 import Sthenauth.Core.JWK (getJWK)
+import Sthenauth.Core.Remote
 import Sthenauth.Core.Site as Site
+import Sthenauth.Core.URL
 import Sthenauth.Crypto.Effect
 import Sthenauth.Database.Effect
 import Sthenauth.Providers.OIDC.Public as OIDC
@@ -68,8 +70,14 @@ getSiteCapabilities
      )
   => Config
   -> Site
+  -> Remote
   -> m Capabilities
-getSiteCapabilities config site =
+getSiteCapabilities config site remote =
   toCapabilities config (sitePolicy site)
-    <$> OIDC.publicProviders
+    <$> oidcProviders
     <*> get
+  where
+    -- | Fix any URLs that contain @localhost@.
+    oidcProviders = over mapped
+      (localhostTo (remote ^. requestFqdn))
+        <$> OIDC.publicProviders

@@ -41,6 +41,7 @@ module Sthenauth.Core.Policy
   , sessionExpire
   , sessionInactive
   , policyAllowsLocalAccountCreation
+  , policyAllowsLocalAccountLogin
   , policyAllowsProviderType
   , assertPolicyRules
   , zxcvbnConfig
@@ -356,13 +357,25 @@ sessionInactive p = addSeconds (p ^. (assuranceLevel.maxInactivityDuration))
 policyAllowsLocalAccountCreation :: Policy -> Bool
 policyAllowsLocalAccountCreation p =
   case p ^. accountCreation of
-   AdminInvitation -> False
-   SelfService     -> True
-   OnlyFromOIDC    -> False
+    AdminInvitation -> False
+    SelfService     -> True
+    OnlyFromOIDC    -> False
 
 --------------------------------------------------------------------------------
+-- | If a user has a local account, can they log in to it?
+policyAllowsLocalAccountLogin :: Policy -> Bool
+policyAllowsLocalAccountLogin p =
+  case p ^. accountCreation of
+    AdminInvitation -> True
+    SelfService     -> True
+    OnlyFromOIDC    -> False
+
+--------------------------------------------------------------------------------
+-- | FIXME: This should probably replace 'AccountCreation'.
 policyAllowsProviderType :: ProviderType -> Policy -> Bool
-policyAllowsProviderType _ _ = True -- FIXME: implement this.
+policyAllowsProviderType = \case
+  LocalProvider -> policyAllowsLocalAccountLogin
+  OidcProvider  -> const True
 
 --------------------------------------------------------------------------------
 -- | Evaluate the given policy rules and abort if any of them fail.

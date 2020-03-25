@@ -189,7 +189,7 @@ issueSession site remote acct = do
 
   let sessionW = newSession (accountId acct) remote (sitePolicy site) key
       query = insertSession (sitePolicy site ^. maxSessionsPerAccount) sessionW
-      plogin = postLogin site
+      plogin = postLogin site remote
 
   transaction query >>= \case
     Nothing -> throwError (RuntimeError "failed to create a session")
