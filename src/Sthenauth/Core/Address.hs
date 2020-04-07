@@ -31,6 +31,7 @@ import Net.IP (IP)
 import qualified Net.IP as IP
 import qualified Net.IPv4 as IPv4
 import Network.Socket (SockAddr(..), hostAddressToTuple, hostAddress6ToTuple)
+import Sthenauth.Core.Encoding
 
 --------------------------------------------------------------------------------
 -- | Network address.
@@ -44,7 +45,8 @@ data Address
     -- said, this module does everything it can to handle that
     -- situation.
 
-  deriving (Generic, Show, Eq, ToJSON, FromJSON)
+  deriving stock (Generic, Show, Eq)
+  deriving (ToJSON, FromJSON) via GenericJSON Address
 
 --------------------------------------------------------------------------------
 -- | Create an address given text representing an IP address.

@@ -27,20 +27,11 @@ module Sthenauth.Core.Email
 
 --------------------------------------------------------------------------------
 -- Imports:
-import Data.Profunctor.Product.Default (Default(def))
-import Database.PostgreSQL.Simple.FromField (FromField(..), fromJSONField)
+import Data.Aeson (ToJSON(..), FromJSON(..))
 import Iolaus.Crypto.HashedSecret (HashedSecret(..))
-import Sthenauth.Crypto.Effect
+import Iolaus.Database.JSON (liftJSON)
+import Sthenauth.Core.Crypto
 import qualified Text.Email.Validate as Validate
-
-import Opaleye
-  ( QueryRunnerColumnDefault(..)
-  , Constant(..)
-  , Column
-  , SqlJsonb
-  , fieldQueryRunnerColumn
-  , sqlValueJSONB
-  )
 
 --------------------------------------------------------------------------------
 -- | A validated email address.
@@ -60,15 +51,7 @@ instance ToJSON SafeEmail where
 instance FromJSON SafeEmail where
   parseJSON = fmap SafeEmail . parseJSON
 
---------------------------------------------------------------------------------
-instance FromField SafeEmail where
-    fromField = fromJSONField
-
-instance QueryRunnerColumnDefault SqlJsonb SafeEmail where
-    queryRunnerColumnDefault = fieldQueryRunnerColumn
-
-instance Default Constant SafeEmail (Column SqlJsonb) where
-    def = Constant sqlValueJSONB
+liftJSON ''SafeEmail
 
 --------------------------------------------------------------------------------
 -- | Validate a user-entered email address.

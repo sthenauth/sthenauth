@@ -28,15 +28,16 @@ module Sthenauth.Core.Event
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Data.Time.Clock (UTCTime(..))
 import Iolaus.Database.Query
 import Iolaus.Database.Table
 import qualified Opaleye as O
 import Sthenauth.Core.Account (AccountId, accountId)
 import Sthenauth.Core.CurrentUser
+import Sthenauth.Core.Database
 import Sthenauth.Core.Error
 import Sthenauth.Core.EventDetail
 import Sthenauth.Core.Remote (Remote)
-import Sthenauth.Database.Effect
 
 --------------------------------------------------------------------------------
 -- | Primary key for the @events@ table.
@@ -76,8 +77,8 @@ type Event = EventF ForHask
 --------------------------------------------------------------------------------
 -- | Record a series of events.
 fireEvents
-  :: ( Has Database sig m
-     , Has Error sig m
+  :: ( Has Database      sig m
+     , Has (Throw Sterr) sig m
      )
   => CurrentUser
   -> Remote

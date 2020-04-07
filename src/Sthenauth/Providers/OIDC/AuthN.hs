@@ -23,8 +23,11 @@ module Sthenauth.Providers.OIDC.AuthN
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Control.Lens ((^.))
 import Crypto.JWT (ClaimsSet)
 import qualified Data.Aeson as Aeson
+import Data.Time.Clock (UTCTime)
+import Data.UUID (UUID)
 import qualified Generics.SOP as SOP
 import Iolaus.Database.JSON
 import Iolaus.Database.Query
@@ -32,7 +35,10 @@ import Iolaus.Database.Table (Key(..))
 import qualified OpenID.Connect.Client.Flow.AuthorizationCode as OIDC
 import OpenID.Connect.TokenResponse (TokenResponse)
 import qualified OpenID.Connect.TokenResponse as TR
+import Relude.Monad.Reexport (MaybeT(..), runMaybeT) -- FIXME: remove this at some point
 import Sthenauth.Core.Account
+import Sthenauth.Core.Crypto
+import Sthenauth.Core.Database
 import Sthenauth.Core.Encoding
 import Sthenauth.Core.Error
 import Sthenauth.Core.EventDetail
@@ -40,8 +46,6 @@ import Sthenauth.Core.HTTP
 import Sthenauth.Core.Remote
 import Sthenauth.Core.Site (Site, siteId, oidcCookieName, sitePolicy)
 import Sthenauth.Core.URL
-import Sthenauth.Crypto.Effect
-import Sthenauth.Database.Effect
 import Sthenauth.Providers.OIDC.Account
 import Sthenauth.Providers.OIDC.Cookie
 import Sthenauth.Providers.OIDC.Provider
@@ -81,11 +85,11 @@ data RequestOIDC
 --------------------------------------------------------------------------------
 -- | Process a request.
 requestOIDC
-  :: ( Has Database sig m
-     , Has Crypto   sig m
-     , Has HTTP     sig m
-     , Has Error    sig m
-     , MonadRandom      m
+  :: ( Has Database      sig m
+     , Has Crypto        sig m
+     , Has HTTP          sig m
+     , Has (Throw Sterr) sig m
+     , MonadRandom           m
      )
   => Site
   -> Remote
@@ -107,11 +111,11 @@ requestOIDC site remote = \case
 -- sending the end-user to their authorization end-point.
 startProviderLogin
   :: forall sig m.
-     ( Has Database sig m
-     , Has Crypto   sig m
-     , Has HTTP     sig m
-     , Has Error    sig m
-     , MonadRandom      m
+     ( Has Database      sig m
+     , Has Crypto        sig m
+     , Has HTTP          sig m
+     , Has (Throw Sterr) sig m
+     , MonadRandom           m
      )
   => Site
   -> Remote
@@ -152,11 +156,11 @@ startProviderLogin site remote url (OidcLogin uuid) = do
 -- | Successful return from a provider.
 returnFromProvider
   :: forall sig m.
-     ( Has Database sig m
-     , Has Crypto   sig m
-     , Has HTTP     sig m
-     , Has Error    sig m
-     , MonadRandom      m
+     ( Has Database      sig m
+     , Has Crypto        sig m
+     , Has HTTP          sig m
+     , Has (Throw Sterr) sig m
+     , MonadRandom           m
      )
   => Site
   -> Remote
@@ -225,9 +229,9 @@ returnFromProvider site remote url browser = do
 --------------------------------------------------------------------------------
 -- | Respond to the a failed authentication from the OIDC provider.
 authenticationFailed
-  :: ( Has Database sig m
-     , Has Crypto   sig m
-     , Has Error    sig m
+  :: ( Has Database      sig m
+     , Has Crypto        sig m
+     , Has (Throw Sterr) sig m
      )
   => IncomingOidcProviderError
   -> m ProviderResponse
@@ -247,9 +251,9 @@ authenticationFailed perror = do
 --------------------------------------------------------------------------------
 -- | Reload the provider's cache if needed.
 refreshProvider
-  :: ( Has Database sig m
-     , Has HTTP     sig m
-     , Has Error    sig m
+  :: ( Has Database      sig m
+     , Has HTTP          sig m
+     , Has (Throw Sterr) sig m
      )
   => UTCTime
   -> Provider
@@ -265,9 +269,9 @@ refreshProvider time =
 -- | Find the stored cookie in the database and from that get the
 -- provider record too.
 findSessionCookie
-  :: ( Has Database sig m
-     , Has Crypto   sig m
-     , Has Error    sig m
+  :: ( Has Database      sig m
+     , Has Crypto        sig m
+     , Has (Throw Sterr) sig m
      )
   => ByteString -> m (OidcCookie, Provider)
 findSessionCookie cookie = do

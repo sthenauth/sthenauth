@@ -21,7 +21,7 @@ module Sthenauth.Providers.OIDC.Token
 --------------------------------------------------------------------------------
 -- Imports:
 import Crypto.JWT (ClaimsSet)
-import qualified Data.Aeson as Aeson
+import Data.Aeson as Aeson
 import Data.Binary (Binary)
 import qualified Data.Binary as Binary
 

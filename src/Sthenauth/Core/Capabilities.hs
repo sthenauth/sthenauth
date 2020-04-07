@@ -20,6 +20,7 @@ module Sthenauth.Core.Capabilities
   ) where
 
 --------------------------------------------------------------------------------
+import Control.Lens ((^.))
 import qualified Data.Aeson as Aeson
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Set as Set

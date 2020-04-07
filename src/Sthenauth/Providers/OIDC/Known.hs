@@ -30,6 +30,7 @@ import qualified Data.Yaml as YAML
 import qualified Paths_sthenauth as Sthenauth
 import Sthenauth.Core.Encoding
 import Sthenauth.Core.URL
+import System.FilePath ((</>))
 
 --------------------------------------------------------------------------------
 -- | Information about a well know OIDC provider.

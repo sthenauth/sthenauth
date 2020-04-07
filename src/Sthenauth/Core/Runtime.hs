@@ -21,10 +21,9 @@ module Sthenauth.Core.Runtime
 --------------------------------------------------------------------------------
 -- Imports:
 import qualified Control.Monad.Database as DB
-import Sthenauth.CertAuth.Carrier (CertAuthEnv)
 import Sthenauth.Core.Config
 import Sthenauth.Core.HTTP
-import qualified Sthenauth.Crypto.Carrier as Crypto
+import qualified Sthenauth.Core.Crypto as Crypto
 
 --------------------------------------------------------------------------------
 -- | Reader environment.
@@ -32,6 +31,5 @@ data Runtime = Runtime
   { rtConfig    :: Config
   , rtDb        :: DB.Runtime
   , rtCrypto    :: Crypto.Runtime
-  , rtCertAuth  :: CertAuthEnv
   , rtHttp      :: HttpR
   }

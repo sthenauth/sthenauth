@@ -35,10 +35,10 @@ import Database.PostgreSQL.Simple.FromField (FromField(..), fromJSONField)
 import qualified Generics.SOP as SOP
 import Iolaus.Crypto.HashedSecret (HashedSecret(..))
 import Iolaus.Crypto.Password
+import Sthenauth.Core.Crypto
 import Sthenauth.Core.Email
 import Sthenauth.Core.Encoding
 import Sthenauth.Core.Username
-import Sthenauth.Crypto.Effect
 
 import Opaleye
   ( QueryRunnerColumnDefault(..)

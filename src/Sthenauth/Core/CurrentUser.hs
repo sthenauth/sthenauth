@@ -33,18 +33,21 @@ module Sthenauth.Core.CurrentUser
 --------------------------------------------------------------------------------
 -- Imports:
 import Control.Arrow (returnA)
+import Control.Lens (Lens')
 import Data.List (lookup)
+import Data.Time.Clock (UTCTime(..))
 import Iolaus.Database.Query
+import Iolaus.Database.Table
 import qualified Network.HTTP.Types.Header as HTTP
 import qualified Opaleye as O
 import Sthenauth.Core.Account
 import Sthenauth.Core.Admin
+import Sthenauth.Core.Crypto
+import Sthenauth.Core.Database
 import Sthenauth.Core.Error
 import Sthenauth.Core.Remote
 import Sthenauth.Core.Session
 import Sthenauth.Core.Site
-import Sthenauth.Crypto.Effect
-import Sthenauth.Database.Effect
 import Web.Cookie
 
 --------------------------------------------------------------------------------
@@ -72,9 +75,9 @@ notLoggedIn = NotLoggedIn
 --------------------------------------------------------------------------------
 -- | Create a current user by parsing a cookie.
 currentUserFromHeaders
-  :: ( Has Database sig m
-     , Has Crypto   sig m
-     , Has Error    sig m
+  :: ( Has Database      sig m
+     , Has Crypto        sig m
+     , Has (Throw Sterr) sig m
      )
   => Site
   -> RequestTime
@@ -88,9 +91,9 @@ currentUserFromHeaders site rtime hs =
 --------------------------------------------------------------------------------
 -- | Create a 'CurrentUser' from the given 'SessionId'.
 currentUserFromSessionKey
-  :: ( Has Database sig m
-     , Has Crypto   sig m
-     , Has Error    sig m
+  :: ( Has Database      sig m
+     , Has Crypto        sig m
+     , Has (Throw Sterr) sig m
      )
   => Site
   -> RequestTime
@@ -116,8 +119,8 @@ currentUserFromSessionKey site rtime clear = do
 -- | Create a 'CurrentUser' from the given 'Account' and 'Session'.
 currentUserFromSession
   :: forall sig m.
-     ( Has Database sig m
-     , Has Error    sig m
+     ( Has Database      sig m
+     , Has (Throw Sterr) sig m
      )
   => Site
   -> RequestTime
@@ -178,8 +181,8 @@ sessionFromCurrentUser = \case
 -- | Update the sessions table to reflect that the given user is still active.
 recordUserActivity
   :: forall sig m.
-     ( Has Database sig m
-     , Has Error    sig m
+     ( Has Database      sig m
+     , Has (Throw Sterr) sig m
      )
   => Site
   -> RequestTime

@@ -28,14 +28,15 @@ module Sthenauth.Providers.OIDC.Public
 --------------------------------------------------------------------------------
 import Control.Lens.TH (makeLenses)
 import qualified Data.Aeson as Aeson
+import Data.UUID (UUID)
 import qualified Generics.SOP as SOP
 import Iolaus.Database.Query
 import Iolaus.Database.Table (getKey)
 import qualified Opaleye as O
+import Sthenauth.Core.Database
 import Sthenauth.Core.Encoding
 import Sthenauth.Core.Error
 import Sthenauth.Core.URL
-import Sthenauth.Database.Effect
 import qualified Sthenauth.Providers.OIDC.Provider as OIDC
 
 --------------------------------------------------------------------------------
@@ -70,7 +71,7 @@ providerToPublic p =
 
 --------------------------------------------------------------------------------
 -- | Fetch all providers from the database.
-publicProviders :: (Has Database sig m, Has Error sig m) => m [Public]
+publicProviders :: (Has Database sig m, Has (Throw Sterr) sig m) => m [Public]
 publicProviders =
   providerToPublic <<$>>
     runQuery (select (O.limit 20 OIDC.fromProviders))

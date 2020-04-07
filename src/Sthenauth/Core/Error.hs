@@ -15,30 +15,23 @@ License: Apache-2.0
 
 -}
 module Sthenauth.Core.Error
-  ( BaseError(..)
-  , AsBaseError(..)
+  ( Sterr(..)
+  , AsSterr(..)
   , UserError(..)
   , AsUserError(..)
   , AsDbError(..)
   , AsCryptoError(..)
-  , throwError
   , throwUserError
-  , catchError
-  , toServerError
-  , Error
   ) where
 
 --------------------------------------------------------------------------------
 -- Imports:
-import Control.Effect.Error (throwError, catchError)
-import qualified Control.Effect.Error as Error
 import Control.Lens.TH (makeClassyPrisms)
-import qualified Data.Aeson as Aeson
+import Data.UUID (UUID)
 import Iolaus.Crypto.Error
 import Iolaus.Database.Error
 import qualified Iolaus.Validation as Validation
-import Servant.Server (ServerError)
-import qualified Servant.Server as Servant
+import Sthenauth.Core.Encoding
 import qualified Text.Password.Strength as Zxcvbn
 
 --------------------------------------------------------------------------------
@@ -54,13 +47,14 @@ data UserError
   | ValidationError Validation.Errors
   | NotFoundError
   | PermissionDenied
-  deriving (Generic, ToJSON, Show)
+  deriving stock (Generic, Show)
+  deriving ToJSON via GenericJSON UserError
 
 makeClassyPrisms ''UserError
 
 --------------------------------------------------------------------------------
--- | Application-level errors.
-data BaseError
+-- | Library-level errors.
+data Sterr
   = AccountInsertError
   | ApplicationUserError UserError
   | BaseCryptoError CryptoError
@@ -79,40 +73,37 @@ data BaseError
   deriving stock (Generic, Show)
   deriving anyclass Exception
 
-makeClassyPrisms ''BaseError
+makeClassyPrisms ''Sterr
 
-instance AsDbError BaseError where _DbError = _BaseDatabaseError
-instance AsCryptoError BaseError where _CryptoError = _BaseCryptoError
-instance AsUserError BaseError where _UserError = _ApplicationUserError
-
---------------------------------------------------------------------------------
-type Error = Error.Error BaseError
+instance AsDbError Sterr where _DbError = _BaseDatabaseError
+instance AsCryptoError Sterr where _CryptoError = _BaseCryptoError
+instance AsUserError Sterr where _UserError = _ApplicationUserError
 
 --------------------------------------------------------------------------------
-throwUserError :: Has Error sig m => UserError -> m a
+throwUserError :: Has (Throw Sterr) sig m => UserError -> m a
 throwUserError = throwError . ApplicationUserError
 
 --------------------------------------------------------------------------------
-toServerError :: BaseError -> ServerError
-toServerError = \case
-  ApplicationUserError e -> ue e
-  _ -> Servant.err500
-
-  where
-    mkSE :: (ToJSON a) => a -> ServerError -> ServerError
-    mkSE a e = e { Servant.errBody = Aeson.encode a }
-
-    ue :: UserError -> ServerError
-    ue e =
-      case e of
-        MustAuthenticateError            -> mkSE e Servant.err401
-        WeakPasswordError _              -> mkSE e Servant.err400
-        MustChangePasswordError          -> mkSE e Servant.err400
-        AuthenticationFailedError _      -> mkSE e Servant.err401
-        UserInputError _                 -> mkSE e Servant.err400
-        InvalidUsernameOrEmailError      -> mkSE e Servant.err400
-        AccountAlreadyExistsError        -> mkSE e Servant.err400
-        OidcProviderAuthenticationFailed -> mkSE e Servant.err401
-        ValidationError _                -> mkSE e Servant.err400
-        NotFoundError                    -> mkSE e Servant.err404
-        PermissionDenied                 -> mkSE e Servant.err403
+-- toServerError :: BaseError -> ServerError
+-- toServerError = \case
+--   ApplicationUserError e -> ue e
+--   _ -> Servant.err500
+--
+--   where
+--     mkSE :: (ToJSON a) => a -> ServerError -> ServerError
+--     mkSE a e = e { Servant.errBody = Aeson.encode a }
+--
+--     ue :: UserError -> ServerError
+--     ue e =
+--       case e of
+--         MustAuthenticateError            -> mkSE e Servant.err401
+--         WeakPasswordError _              -> mkSE e Servant.err400
+--         MustChangePasswordError          -> mkSE e Servant.err400
+--         AuthenticationFailedError _      -> mkSE e Servant.err401
+--         UserInputError _                 -> mkSE e Servant.err400
+--         InvalidUsernameOrEmailError      -> mkSE e Servant.err400
+--         AccountAlreadyExistsError        -> mkSE e Servant.err400
+--         OidcProviderAuthenticationFailed -> mkSE e Servant.err401
+--         ValidationError _                -> mkSE e Servant.err400
+--         NotFoundError                    -> mkSE e Servant.err404
+--         PermissionDenied                 -> mkSE e Servant.err403

@@ -44,24 +44,28 @@ module Sthenauth.Core.Session
 --------------------------------------------------------------------------------
 -- Library Imports:
 import Control.Arrow (returnA)
+import Control.Lens ((^.))
+import Data.Aeson (ToJSON(..), FromJSON(..))
 import qualified Data.Binary as Binary
-import qualified Data.ByteString.Base64.URL.Lazy as Base64
+import Data.ByteArray.Encoding (Base(..), convertToBase, convertFromBase)
 import qualified Data.ByteString.Lazy as LByteString
 import Data.Time.Calendar (Day(..))
+import Data.Time.Clock (UTCTime(..))
 import Iolaus.Crypto.Salt
 import Iolaus.Database.Extra
 import Iolaus.Database.JSON (liftJSON)
 import Iolaus.Database.Query
 import Iolaus.Database.Table
 import qualified Opaleye as O
+import Relude.Extra.Tuple (traverseToSnd)
 import Sthenauth.Core.Account
+import Sthenauth.Core.Crypto
+import Sthenauth.Core.Database
 import Sthenauth.Core.Error
 import Sthenauth.Core.Policy
 import Sthenauth.Core.PostLogin
 import Sthenauth.Core.Remote
 import Sthenauth.Core.Site
-import Sthenauth.Crypto.Effect
-import Sthenauth.Database.Effect
 import Web.Cookie
 
 --------------------------------------------------------------------------------
@@ -178,7 +182,7 @@ newSession account remote policy key = Session
 issueSession
   :: ( Has Database sig m
      , Has Crypto   sig m
-     , Has Error    sig m
+     , Has (Throw Sterr) sig m
      )
   => Site
   -> Remote
@@ -280,15 +284,20 @@ recordSessionActivity policy now sid =
     }
 --------------------------------------------------------------------------------
 -- | Encode a session ID as text that can be sent over the network.
-encodeSessionId :: SessionId -> LByteString
-encodeSessionId = Base64.encode . Binary.encode . getKey
+encodeSessionId :: SessionId -> ByteString
+encodeSessionId = getKey
+             >>> Binary.encode
+             >>> toStrict
+             >>> convertToBase Base64URLUnpadded
 
 --------------------------------------------------------------------------------
 -- Attempt to decode a session ID that was previously encoded with the
 -- 'encodeSessionId' function.
-decodeSessionId :: LByteString -> Maybe SessionId
-decodeSessionId bs =
-  case Binary.decodeOrFail $ Base64.decodeLenient bs of
-    Left _ -> Nothing
-    Right (bs', _, key) | LByteString.null bs' -> Just (Key key)
-                        | otherwise -> Nothing
+decodeSessionId :: ByteString -> Maybe SessionId
+decodeSessionId bs = do
+  bytes <- rightToMaybe (convertFromBase Base64URLUnpadded bs)
+  (bs', _, key) <- rightToMaybe (Binary.decodeOrFail (toLazy bytes))
+
+  if LByteString.null bs'
+    then pure (Key key)
+    else Nothing

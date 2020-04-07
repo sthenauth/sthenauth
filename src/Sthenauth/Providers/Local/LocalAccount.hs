@@ -28,15 +28,15 @@ module Sthenauth.Providers.Local.LocalAccount
 --------------------------------------------------------------------------------
 -- Imports:
 import Iolaus.Database.Query
-import Iolaus.Database.Table (getKey)
+import Iolaus.Database.Table
 import qualified Opaleye as O
 import Sthenauth.Core.Account as Account
+import Sthenauth.Core.Crypto
+import Sthenauth.Core.Database
 import Sthenauth.Core.Email (toSafeEmail, getEmail)
 import Sthenauth.Core.Error
 import Sthenauth.Core.Site as Site
 import Sthenauth.Core.Username (getUsername)
-import Sthenauth.Crypto.Effect
-import Sthenauth.Database.Effect
 import Sthenauth.Providers.Local.Login (Login, getLogin)
 
 --------------------------------------------------------------------------------
@@ -98,7 +98,7 @@ toLocalAccount sid login passwd =
 
 --------------------------------------------------------------------------------
 insertLocalAccount
-  :: (Has Database sig m, Has Error sig m)
+  :: (Has Database sig m, Has (Throw Sterr) sig m)
   => LocalAccount SqlWrite
   -> m Account
 insertLocalAccount localAcct =
@@ -117,9 +117,9 @@ insertLocalAccountQuery LocalAccount{..} =
 
 --------------------------------------------------------------------------------
 doesAccountExist
-  :: ( Has Database sig m
-     , Has Crypto   sig m
-     , Has Error    sig m
+  :: ( Has Database      sig m
+     , Has Crypto        sig m
+     , Has (Throw Sterr) sig m
      )
   => SiteId
   -> Login
@@ -130,9 +130,9 @@ doesAccountExist sid l = do
 
 --------------------------------------------------------------------------------
 getAccountFromLogin
-  :: ( Has Database sig m
-     , Has Crypto   sig m
-     , Has Error    sig m
+  :: ( Has Database      sig m
+     , Has Crypto        sig m
+     , Has (Throw Sterr) sig m
      )
   => SiteId
   -> Login

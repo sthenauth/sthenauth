@@ -27,6 +27,7 @@ import Data.Text (strip, toLower)
 import qualified Data.Text as Text
 import Data.Text.ICU.Normalize (NormalizationMode(NFKC), normalize)
 import Database.PostgreSQL.Simple.FromField (FromField(..))
+import Sthenauth.Core.Email
 
 import Opaleye
   ( Constant(..)
@@ -36,9 +37,6 @@ import Opaleye
   , fieldQueryRunnerColumn
   , toFields
   )
-
---------------------------------------------------------------------------------
-import Sthenauth.Core.Email
 
 --------------------------------------------------------------------------------
 -- | Type representing a normalized user name.

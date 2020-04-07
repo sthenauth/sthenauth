@@ -22,13 +22,14 @@ module Sthenauth.Providers.Local.Provider
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Control.Lens ((^.))
 import Iolaus.Database.Table (getKey)
 import Sthenauth.Core.Account (accountId)
+import Sthenauth.Core.Crypto
+import Sthenauth.Core.Database
 import Sthenauth.Core.Error
 import Sthenauth.Core.Remote
 import Sthenauth.Core.Site (Site, siteId, sitePolicy)
-import Sthenauth.Crypto.Effect
-import Sthenauth.Database.Effect
 import Sthenauth.Providers.Local.LocalAccount
 import Sthenauth.Providers.Local.Login
 import Sthenauth.Providers.Local.Password
@@ -37,9 +38,9 @@ import Sthenauth.Providers.Types
 --------------------------------------------------------------------------------
 authenticate
   :: forall sig m.
-     ( Has Crypto   sig m
-     , Has Database sig m
-     , Has Error    sig m
+     ( Has Crypto        sig m
+     , Has Database      sig m
+     , Has (Throw Sterr) sig m
      )
   => Site
   -> Remote
@@ -65,9 +66,9 @@ authenticate site remote creds = do
 --------------------------------------------------------------------------------
 -- | Create a new account and log in the new user.
 createNewLocalAccount
-  :: ( Has Crypto   sig m
-     , Has Database sig m
-     , Has Error    sig m
+  :: ( Has Crypto        sig m
+     , Has Database      sig m
+     , Has (Throw Sterr) sig m
      )
   => Site
   -> Remote

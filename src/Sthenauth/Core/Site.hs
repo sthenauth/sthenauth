@@ -47,13 +47,17 @@ module Sthenauth.Core.Site
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Control.Lens ((^.), (.~), lens)
 import Control.Arrow (returnA)
+import Data.Time.Clock (UTCTime)
 import qualified Data.UUID as UUID
 import Iolaus.Database.Extra
 import Iolaus.Database.Query hiding ((.?))
 import Iolaus.Database.Table
 import Iolaus.Validation
 import qualified Opaleye as O
+import Sthenauth.Core.Crypto
+import Sthenauth.Core.Database
 import Sthenauth.Core.Encoding
 import Sthenauth.Core.Error
 import Sthenauth.Core.JWK
@@ -61,8 +65,6 @@ import Sthenauth.Core.Policy
 import Sthenauth.Core.PostLogin
 import Sthenauth.Core.Remote (Remote, requestFqdn)
 import Sthenauth.Core.URL
-import Sthenauth.Crypto.Effect
-import Sthenauth.Database.Effect
 
 --------------------------------------------------------------------------------
 type SiteId = Key UUID SiteF
@@ -217,10 +219,10 @@ insertAlias = insert1 . ins
 -- | Validate a new site, then insert it into the database.
 createSite
   :: forall m sig.
-     ( MonadRandom      m
-     , Has Database sig m
-     , Has Crypto   sig m
-     , Has Error    sig m
+     ( MonadRandom           m
+     , Has Database      sig m
+     , Has Crypto        sig m
+     , Has (Throw Sterr) sig m
      )
    => UTCTime
    -> SiteF ForUI
@@ -264,7 +266,7 @@ createSite time s = do
 --
 -- This query intentionally uses an incomplete pattern so that if the
 -- query fails to produce a site an error will be thrown.
-siteFromFQDN :: (Has Database sig m, Has Error sig m) => Text -> m Site
+siteFromFQDN :: (Has Database sig m, Has (Throw Sterr) sig m) => Text -> m Site
 siteFromFQDN fqdn = runQuery $ do
     Just site <- select1 $ O.orderBy (O.asc siteIsDefault) query
     pure site
@@ -306,7 +308,7 @@ siteFromFQDN fqdn = runQuery $ do
 
 --------------------------------------------------------------------------------
 -- | Check if a 'Site' exists.
-doesSiteExist :: (Has Database sig m, Has Error sig m) => Text -> m Bool
+doesSiteExist :: (Has Database sig m, Has (Throw Sterr) sig m) => Text -> m Bool
 doesSiteExist domain = (/= 0) <$> runQuery (count query)
   where
     query = proc () -> do
@@ -349,7 +351,7 @@ resetDefaultSite = void . update $ Update
 --------------------------------------------------------------------------------
 -- | Validate a 'Site' coming from the user interface.
 checkSite
-  :: (Has Database sig m, Has Error sig m)
+  :: (Has Database sig m, Has (Throw Sterr) sig m)
   => ValidationT m (SiteF ForUI) (SiteF SqlWrite)
 checkSite = Site
   <$> {- Not allowed in JSON -}           pure Nothing <?> "pk"
@@ -367,7 +369,7 @@ checkSite = Site
 --------------------------------------------------------------------------------
 -- | Run the site validation checker.
 validateSite
-  :: (Has Database sig m, Has Error sig m)
+  :: (Has Database sig m, Has (Throw Sterr) sig m)
   => SiteF ForUI -> m (SiteF SqlWrite)
 validateSite =
   runValidationEither checkSite >=>
@@ -389,7 +391,7 @@ siteForUI s = Site
 --------------------------------------------------------------------------------
 -- | Try to insert a new site into the database.
 insertSite
-  :: (Has Database sig m, Has Error sig m)
+  :: (Has Database sig m, Has (Throw Sterr) sig m)
   => SiteF SqlWrite
   -> Bool -- ^ Is the new site the default site?
   -> (Site -> Query a)
@@ -406,7 +408,7 @@ insertSite site def f =
 --------------------------------------------------------------------------------
 -- | Update (some) fields of the Site record.
 updateSite
-  :: (Has Database sig m, Has Error sig m)
+  :: (Has Database sig m, Has (Throw Sterr) sig m)
   => SiteId -> SiteF ForUI -> m ()
 updateSite sid ui = do
     site <- validateSite ui

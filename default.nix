@@ -12,6 +12,11 @@ in nix-hs {
   cabal = ./sthenauth.cabal;
 
   overrides = lib: self: super: with lib; rec {
+    fused-effects-relude = lib.fetchGit {
+      url = "https://code.devalot.com/open/fused-effects-relude.git";
+      rev = "97f2864bcc8c1dbbf598c670ac30c6ae8bc20f06";
+    };
+
     inherit (lib.fetchGit {
       url = "https://code.devalot.com/incubator/iolaus.git";
       rev = "4396dba915284a9d92958a7986fdf83d2db9d2f6";

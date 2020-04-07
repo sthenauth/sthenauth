@@ -25,12 +25,16 @@ module Sthenauth.Core.AuthN
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Control.Lens ((^.))
 import qualified Data.Aeson as Aeson
+import Data.UUID (UUID)
 import qualified Generics.SOP as SOP
 import Iolaus.Database.Table (getKey)
 import qualified OpenID.Connect.Client.Flow.AuthorizationCode as OIDC
 import Sthenauth.Core.Account (accountId)
+import Sthenauth.Core.Crypto
 import Sthenauth.Core.CurrentUser
+import Sthenauth.Core.Database
 import Sthenauth.Core.Encoding
 import Sthenauth.Core.Error
 import Sthenauth.Core.Event
@@ -43,8 +47,6 @@ import Sthenauth.Core.Remote
 import Sthenauth.Core.Session
 import Sthenauth.Core.Site (Site, sessionCookieName, sitePolicy)
 import Sthenauth.Core.URL
-import Sthenauth.Crypto.Effect
-import Sthenauth.Database.Effect
 import qualified Sthenauth.Providers.Local.Provider as Local
 import qualified Sthenauth.Providers.OIDC.AuthN as OIDC
 import Sthenauth.Providers.Types
@@ -77,7 +79,7 @@ data ResponseAuthN
 --------------------------------------------------------------------------------
 -- | Authenticate a user with the given provider.
 requestAuthN
-  :: ( Has Error               sig m
+  :: ( Has (Error Sterr)       sig m
      , Has Crypto              sig m
      , Has HTTP                sig m
      , Has Database            sig m
@@ -125,7 +127,7 @@ requestAuthN site remote req = do
 -- | Delete the current user's session.
 logout
   :: ( Has Database            sig m
-     , Has Error               sig m
+     , Has (Throw Sterr)       sig m
      , Has (State CurrentUser) sig m
      )
   => Site
@@ -153,7 +155,7 @@ dispatchRequest
      ( Has Crypto              sig m
      , Has Database            sig m
      , Has HTTP                sig m
-     , Has Error               sig m
+     , Has (Error Sterr)       sig m
      , Has (State CurrentUser) sig m
      , MonadRandom                 m
      )
@@ -202,13 +204,13 @@ dispatchRequest site remote = \case
     pure (SuccessfulLogout (Just cookie))
 
   where
-    onLocalError :: Local.Credentials -> BaseError -> m ProviderResponse
+    onLocalError :: Local.Credentials -> Sterr -> m ProviderResponse
     onLocalError creds = \case
       ApplicationUserError ue ->
         FailedAuthN ue <$> failedLoginEvent ue (Local.name creds)
       e -> throwError e
 
-    onOidcError :: Text -> BaseError -> m ProviderResponse
+    onOidcError :: Text -> Sterr -> m ProviderResponse
     onOidcError ident = \case
       ApplicationUserError ue -> FailedAuthN ue <$> failedLoginEvent ue ident
       e                       -> throwError e

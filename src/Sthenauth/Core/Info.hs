@@ -23,19 +23,21 @@ module Sthenauth.Core.Info
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Control.Lens ((^.), over, mapped)
 import qualified Crypto.JOSE.JWK as JOSE
 import Iolaus.Database.Query
+import Iolaus.Database.Table
 import qualified Opaleye as O
 import Sthenauth.Core.Capabilities
 import Sthenauth.Core.Config (Config)
+import Sthenauth.Core.Crypto
 import Sthenauth.Core.CurrentUser (CurrentUser)
+import Sthenauth.Core.Database
 import Sthenauth.Core.Error
 import Sthenauth.Core.JWK (getJWK)
 import Sthenauth.Core.Remote
 import Sthenauth.Core.Site as Site
 import Sthenauth.Core.URL
-import Sthenauth.Crypto.Effect
-import Sthenauth.Database.Effect
 import Sthenauth.Providers.OIDC.Public as OIDC
 
 --------------------------------------------------------------------------------
@@ -43,9 +45,9 @@ import Sthenauth.Providers.OIDC.Public as OIDC
 -- into a key set.
 getSitePublicKeys
   :: forall m sig.
-     ( Has Database sig m
-     , Has Crypto   sig m
-     , Has Error    sig m
+     ( Has Database      sig m
+     , Has Crypto        sig m
+     , Has (Throw Sterr) sig m
      )
   => SiteId
   -> m JOSE.JWKSet
@@ -65,7 +67,7 @@ getSitePublicKeys sid = do
 -- | Get the capabilities for a site.
 getSiteCapabilities
   :: ( Has Database            sig m
-     , Has Error               sig m
+     , Has (Throw Sterr)       sig m
      , Has (State CurrentUser) sig m
      )
   => Config

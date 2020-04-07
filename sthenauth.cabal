@@ -71,10 +71,101 @@ common options
 
 --------------------------------------------------------------------------------
 common dependencies
-  build-depends: base
+  build-depends: base                 >= 4.9  && < 5.0
+               , aeson                >= 1.3  && < 1.5
+               , binary               >= 0.8  && < 1.0
+               , bytestring           >= 0.10 && < 0.11
+               , containers           >= 0.6  && < 0.7
+               , cookie               >= 0.4  && < 0.5
+               , cryptonite           >= 0.25 && < 1.0
+               , ekg-core             >= 0.1  && < 0.2
+               , elm-syntax           >= 0.2  && < 0.3
+               , email-validate       >= 2.3  && < 2.4
+               , filepath             >= 1.4  && < 1.5
+               , fused-effects        >= 1.0  && < 1.1
+               , fused-effects-relude >= 0.1  && < 0.2
+               , generics-sop         >= 0.4  && < 0.6
+               , haskell-to-elm       >= 0.2  && < 0.3
+               , http-client          >= 0.6  && < 0.7
+               , http-client-tls      >= 0.3  && < 0.4
+               , http-types           >= 0.12 && < 0.13
+               , iolaus-crypto        >= 0.1  && < 0.2
+               , iolaus-opaleye       >= 0.1  && < 0.2
+               , iolaus-validation    >= 0.1  && < 0.2
+               , ip                   >= 1.4  && < 1.8
+               , jose                 >= 0.8  && < 0.9
+               , lens                 >= 4.0  && < 5.0
+               , lens-aeson           >= 1.0  && < 1.2
+               , memory               >= 0.14 && < 0.16
+               , mtl                  >= 2.2  && < 2.3
+               , network              >= 3.0  && < 3.2
+               , network-uri          >= 2.6  && < 2.7
+               , opaleye              >= 0.6  && < 0.7
+               , openid-connect       >= 0.1  && < 0.2
+               , postgresql-simple    >= 0.5  && < 0.7
+               , product-profunctors  >= 0.10 && < 0.11
+               , profunctors          >= 5.3  && < 5.6
+               , random               >= 1.1  && < 1.2
+               , relude               >= 0.6  && < 0.7
+               , safe-exceptions      >= 0.1  && < 0.2
+               , servant              >= 0.16 && < 0.17
+               , text                 >= 1.2  && < 1.3
+               , text-icu             >= 0.7  && < 0.8
+               , time                 >= 1.8  && < 2.0
+               , unordered-containers >= 0.2  && < 0.3
+               , uuid                 >= 1.3  && < 1.4
+               , yaml                 >= 0.11 && < 0.12
+               , zxcvbn-hs            >= 0.3  && < 0.4
+
+  mixins: base hiding (Prelude)
+        , fused-effects-relude (FusedRelude as Prelude)
 
 --------------------------------------------------------------------------------
 library
   import: options, dependencies
   hs-source-dirs: src
   exposed-modules:
+    Sthenauth.Core.Account
+    Sthenauth.Core.Action
+    Sthenauth.Core.Address
+    Sthenauth.Core.Admin
+    Sthenauth.Core.AuthN
+    Sthenauth.Core.Bearer
+    Sthenauth.Core.Capabilities
+    Sthenauth.Core.Config
+    Sthenauth.Core.Crypto
+    Sthenauth.Core.CurrentUser
+    Sthenauth.Core.Database
+    Sthenauth.Core.Email
+    Sthenauth.Core.Encoding
+    Sthenauth.Core.Error
+    Sthenauth.Core.Event
+    Sthenauth.Core.EventDetail
+    Sthenauth.Core.HTTP
+    Sthenauth.Core.Info
+    Sthenauth.Core.JWK
+    Sthenauth.Core.Policy
+    Sthenauth.Core.PostLogin
+    Sthenauth.Core.Provider
+    Sthenauth.Core.Public
+    Sthenauth.Core.Remote
+    Sthenauth.Core.Runtime
+    Sthenauth.Core.Session
+    Sthenauth.Core.Site
+    Sthenauth.Core.URL
+    Sthenauth.Core.Username
+
+    Sthenauth.Providers.OIDC.Known
+    Sthenauth.Providers.OIDC.Public
+    Sthenauth.Providers.OIDC.Cookie
+    Sthenauth.Providers.OIDC.Token
+    Sthenauth.Providers.OIDC.AuthN
+    Sthenauth.Providers.OIDC.Provider
+    Sthenauth.Providers.OIDC.Account
+    Sthenauth.Providers.Types
+    Sthenauth.Providers.Local.Login
+    Sthenauth.Providers.Local.Password
+    Sthenauth.Providers.Local.LocalAccount
+    Sthenauth.Providers.Local.Provider
+  other-modules:
+    Paths_sthenauth

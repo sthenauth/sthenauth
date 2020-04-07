@@ -37,10 +37,12 @@ module Sthenauth.Core.Account
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Data.Time.Clock (UTCTime)
 import Control.Arrow (returnA)
 import Iolaus.Database.Query
 import Iolaus.Database.Table
 import qualified Opaleye as O
+import Sthenauth.Core.Crypto
 import Sthenauth.Core.Email (SafeEmail)
 import Sthenauth.Core.Encoding
 import Sthenauth.Core.Site (SiteId)

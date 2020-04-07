@@ -49,7 +49,7 @@ module Sthenauth.Core.Policy
 
 --------------------------------------------------------------------------------
 -- Imports:
-import Control.Lens.TH (makeLenses)
+import Control.Lens ((^.), makeLenses)
 import qualified Data.Aeson as Aeson
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
@@ -57,6 +57,8 @@ import Data.Time.Clock
 import qualified Generics.SOP as SOP
 import Iolaus.Database.JSON (liftJSON)
 import Iolaus.Validation
+import Prelude hiding (minInt)
+import Relude.Extra.Enum (universe)
 import Sthenauth.Core.Encoding
 import Sthenauth.Core.Error
 import Sthenauth.Core.Provider (ProviderType(..))
@@ -117,7 +119,7 @@ data Authenticator
     -- ^ Requires both 'SingleFactorCryptoSoftware' and
     -- 'MemorizedSecret'.  Needed in order to support AAL3.
 
-  deriving (Generic, Show, Eq, Ord, Enum, Bounded)
+  deriving (Generic, Show, Eq, Ord, Enum, Bounded, Hashable)
   deriving (SOP.Generic, SOP.HasDatatypeInfo)
   deriving (ToJSON, FromJSON) via GenericJSON Authenticator
   deriving ( HasElmType
@@ -380,7 +382,7 @@ policyAllowsProviderType = \case
 --------------------------------------------------------------------------------
 -- | Evaluate the given policy rules and abort if any of them fail.
 assertPolicyRules
-  :: Has Error sig m
+  :: Has (Throw Sterr) sig m
   => Policy -> [Policy -> Bool] -> m ()
 assertPolicyRules policy rules =
   unless (all ($ policy) rules) (throwUserError PermissionDenied)

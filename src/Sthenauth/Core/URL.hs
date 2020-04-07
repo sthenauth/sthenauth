@@ -1,4 +1,4 @@
-{-|
+ {-|
 
 Copyright:
   This file is part of the package sthenauth. It is subject to the
@@ -33,6 +33,7 @@ module Sthenauth.Core.URL
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Control.Lens ((%~), Lens', lens)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Encoding as Aeson
 import qualified Data.ByteString.Char8 as Char8
@@ -73,11 +74,11 @@ instance HasURL URL where
   url = id
 
 --------------------------------------------------------------------------------
-instance ToJSON URL where
-  toJSON = toJSON . urlToText
+instance Aeson.ToJSON URL where
+  toJSON = Aeson.toJSON . urlToText
   toEncoding = Aeson.text . urlToText
 
-instance FromJSON URL where
+instance Aeson.FromJSON URL where
   parseJSON = Aeson.withText "URL" textToURL
 
 --------------------------------------------------------------------------------

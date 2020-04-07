@@ -35,10 +35,9 @@ module Sthenauth.Providers.OIDC.Provider
 
 --------------------------------------------------------------------------------
 import Control.Arrow (returnA)
-import Control.Carrier.Lift (runM, sendM)
-import Control.Carrier.Writer.Strict (execWriter, tell)
 import Crypto.JOSE (JWKSet)
 import Data.Binary (Binary)
+import Data.Time.Clock (UTCTime)
 import Iolaus.Database.JSON
 import Iolaus.Database.Query
 import Iolaus.Database.Table
@@ -46,11 +45,10 @@ import qualified Opaleye as O
 import qualified OpenID.Connect.Authentication as A
 import OpenID.Connect.Client.Provider (Discovery, discovery, keysFromDiscovery)
 import qualified OpenID.Connect.Client.Provider as P
-import Prelude hiding (tell)
+import Sthenauth.Core.Crypto
 import Sthenauth.Core.Error
 import qualified Sthenauth.Core.HTTP as HTTP
 import Sthenauth.Core.URL
-import Sthenauth.Crypto.Effect
 
 --------------------------------------------------------------------------------
 -- | The primary key on the OpenID Connect providers table.
@@ -141,7 +139,7 @@ providerCredentials url provider = do
 
 --------------------------------------------------------------------------------
 fetchDiscoveryDocument
-  :: Has Error sig m
+  :: Has (Throw Sterr) sig m
   => HTTP.Client m
   -> URL
   -> m (Discovery, Maybe UTCTime)
@@ -150,7 +148,7 @@ fetchDiscoveryDocument http = discovery http . getURI >=>
 
 --------------------------------------------------------------------------------
 updateDiscoveryDocument
-  :: Has Error sig m
+  :: Has (Throw Sterr) sig m
   => HTTP.Client m
   -> Provider
   -> m (ProviderF SqlRead -> ProviderF SqlRead)
@@ -163,7 +161,7 @@ updateDiscoveryDocument http p = do
 
 --------------------------------------------------------------------------------
 fetchProviderKeys
-  :: Has Error sig m
+  :: Has (Throw Sterr) sig m
   => HTTP.Client m
   -> Discovery
   -> m (JWKSet, Maybe UTCTime)
@@ -172,7 +170,7 @@ fetchProviderKeys http = keysFromDiscovery http >=>
 
 --------------------------------------------------------------------------------
 updateProviderKeys
-  :: Has Error sig m
+  :: Has (Throw Sterr) sig m
   => HTTP.Client m
   -> Provider
   -> m (ProviderF SqlRead -> ProviderF SqlRead)
@@ -208,7 +206,7 @@ insertProviderReturningCount p =
 -- statement as a 'Left' value.  Otherwise return the given provider
 -- in 'Right'.
 refreshProviderCacheIfNeeded
-  :: forall sig m. Has Error sig m
+  :: forall sig m. Has (Throw Sterr) sig m
   => HTTP.Client m              -- ^ The HTTP client function.
   -> UTCTime                    -- ^ The current time (for cache testing).
   -> Provider                   -- ^ The provider record to test.

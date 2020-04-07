@@ -34,6 +34,7 @@ module Sthenauth.Providers.OIDC.Account
 --------------------------------------------------------------------------------
 -- Imports:
 import Control.Arrow (returnA)
+import Control.Lens ((^.), (^?), view, re)
 import Crypto.JWT (NumericDate(..), ClaimsSet)
 import qualified Crypto.JWT as JWT
 import qualified Data.Aeson as Aeson
@@ -48,9 +49,9 @@ import OpenID.Connect.Scope (Scope, scopeFromWords)
 import OpenID.Connect.TokenResponse (TokenResponse)
 import qualified OpenID.Connect.TokenResponse as TR
 import Sthenauth.Core.Account
+import Sthenauth.Core.Crypto
 import Sthenauth.Core.Email
 import Sthenauth.Core.Site (SiteId)
-import Sthenauth.Crypto.Effect
 import Sthenauth.Providers.OIDC.Provider
 import Sthenauth.Providers.OIDC.Token
 

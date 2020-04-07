@@ -28,12 +28,14 @@ module Sthenauth.Providers.OIDC.Cookie
 --------------------------------------------------------------------------------
 -- Imports:
 import Control.Arrow (returnA)
+import Control.Lens ((^.))
+import Data.Time.Clock (UTCTime)
 import Iolaus.Database.Extra
 import Iolaus.Database.Query
 import Iolaus.Database.Table
 import qualified Opaleye as O
+import Sthenauth.Core.Crypto
 import Sthenauth.Core.Policy
-import Sthenauth.Crypto.Effect
 import Sthenauth.Providers.OIDC.Provider
 import Web.Cookie
 

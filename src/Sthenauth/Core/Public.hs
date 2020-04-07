@@ -24,6 +24,7 @@ module Sthenauth.Core.Public
 --------------------------------------------------------------------------------
 -- Imports:
 import qualified Data.Aeson as Aeson
+import Data.Time.Clock (UTCTime(..))
 import qualified Generics.SOP as SOP
 import Sthenauth.Core.Encoding
 import qualified Sthenauth.Core.Session as Session

@@ -20,7 +20,9 @@ module Sthenauth.Core.EventDetail
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Data.UUID (UUID)
 import Iolaus.Database.JSON (liftJSON)
+import Sthenauth.Core.Crypto
 import Sthenauth.Core.Encoding
 import Sthenauth.Core.PostLogin
 

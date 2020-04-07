@@ -20,9 +20,6 @@ module Sthenauth.Core.Action
   , Env(..)
   , dischargeMonadRandom
   , runAction
-
-  , MonadByline
-  , liftByline
   ) where
 
 --------------------------------------------------------------------------------
@@ -41,8 +38,7 @@ import Sthenauth.Core.HTTP
 import Sthenauth.Core.Remote
 import Sthenauth.Core.Runtime
 import Sthenauth.Core.Site (Site)
-import Sthenauth.Crypto.Carrier (Crypto, CryptoC, runCrypto, randomByteArray)
-import System.Console.Byline (Byline, runByline)
+import Sthenauth.Core.Crypto (Crypto, CryptoC, runCrypto, randomByteArray)
 
 --------------------------------------------------------------------------------
 data Env = Env
@@ -61,7 +57,7 @@ newtype Action m a = Action
           (DatabaseC
             (CryptoC
               (HttpC
-                (ErrorC BaseError
+                (ErrorC Sterr
                   (LiftC m)))))) a
   }
   deriving newtype (Functor, Applicative, Monad)
@@ -72,7 +68,7 @@ type ActionEff m
   :+: Database
   :+: Crypto
   :+: HTTP
-  :+: Error
+  :+: Error Sterr
   :+: Lift m
 
 instance MonadIO m => Algebra (ActionEff m) (Action m) where
@@ -80,16 +76,6 @@ instance MonadIO m => Algebra (ActionEff m) (Action m) where
 
 instance MonadTrans Action where
   lift = Action . lift . lift . lift . lift . lift . lift . lift
-
--- FIXME: Temp hack,
-class (Monad m) => MonadByline m where
-  liftByline :: Byline IO a -> m a
-
-instance MonadIO m => MonadByline (Action m) where
-  liftByline b = Action $
-    liftIO (runByline b) >>= \case
-      Nothing -> throwError (RuntimeError "unexpected termination")
-      Just x  -> return x
 
 --------------------------------------------------------------------------------
 newtype ActionM a = ActionM (Action IO a)
@@ -122,7 +108,7 @@ runAction
   -> Remote
   -> CurrentUser
   -> Action m a
-  -> m (Either BaseError (CurrentUser, a))
+  -> m (Either Sterr (CurrentUser, a))
 runAction env site remote user script
   = unAction script
   & runReader (Env env site remote (rtConfig env))

@@ -32,6 +32,7 @@ module Sthenauth.Core.HTTP
 import Control.Algebra
 import Control.Carrier.Reader
 import Control.Exception.Safe (try)
+import GHC.Generics (Generic1)
 import Network.HTTP.Client (Request, Response)
 import qualified Network.HTTP.Client as HTTP
 import Network.HTTP.Client.TLS (newTlsManager)
@@ -64,7 +65,7 @@ newtype HttpC m a = HttpC
   { runHttpC :: ReaderC HttpR m a }
   deriving newtype (Functor, Applicative, Monad, MonadIO, MonadTrans)
 
-instance (MonadIO m, Has Error sig m) => Algebra (HTTP :+: sig) (HttpC m) where
+instance (MonadIO m, Has (Throw Sterr) sig m) => Algebra (HTTP :+: sig) (HttpC m) where
   alg = \case
     R other -> HttpC (alg (R (handleCoercible other)))
     L (HTTP req k) -> do

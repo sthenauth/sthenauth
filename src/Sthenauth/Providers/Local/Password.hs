@@ -22,14 +22,16 @@ module Sthenauth.Providers.Local.Password
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Data.Time.Clock (UTCTime(..))
+import Iolaus.Crypto.Password (VerifyStatus(..))
 import qualified Iolaus.Crypto.Password as Crypto
 import Iolaus.Database.Query
 import Sthenauth.Core.Account as Account
+import Sthenauth.Core.Crypto
+import Sthenauth.Core.Database
 import Sthenauth.Core.Error
 import Sthenauth.Core.Policy
 import Sthenauth.Core.Remote
-import Sthenauth.Crypto.Effect
-import Sthenauth.Database.Effect
 
 --------------------------------------------------------------------------------
 data PasswordStatus
@@ -40,8 +42,8 @@ data PasswordStatus
 --------------------------------------------------------------------------------
 -- Verify that the given password text is strong enough to be hashed.
 asStrongPassword
-  :: ( Has Crypto sig m
-     , Has Error  sig m
+  :: ( Has Crypto        sig m
+     , Has (Throw Sterr) sig m
      )
   => Policy
   -> RequestTime
@@ -59,9 +61,9 @@ asStrongPassword policy time input = do
 -- Automatically upgrades the password if necessary.  May throw an
 -- error directing the user to change their password.
 verifyAndUpgradePassword
-  :: ( Has Database sig m
-     , Has Crypto   sig m
-     , Has Error    sig m
+  :: ( Has Database      sig m
+     , Has Crypto        sig m
+     , Has (Throw Sterr) sig m
      )
   => Policy
   -> RequestTime
@@ -82,9 +84,9 @@ verifyAndUpgradePassword policy rtime passwd acct =
 --------------------------------------------------------------------------------
 -- | Upgrade a password.
 upgradePassword
-  :: ( Has Database sig m
-     , Has Crypto   sig m
-     , Has Error    sig m
+  :: ( Has Database      sig m
+     , Has Crypto        sig m
+     , Has (Throw Sterr) sig m
      )
   => Policy
   -> RequestTime

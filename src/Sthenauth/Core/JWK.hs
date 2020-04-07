@@ -24,6 +24,7 @@ module Sthenauth.Core.JWK
   ) where
 
 --------------------------------------------------------------------------------
+import Control.Lens ((^.), (?~), re)
 import Crypto.Hash (Digest, SHA256)
 import qualified Crypto.JOSE as JOSE
 import qualified Crypto.JOSE.JWA.JWE.Alg as JOSE
@@ -33,7 +34,9 @@ import qualified Data.Binary as Binary
 import Data.Profunctor (dimap)
 import Data.Profunctor.Product.Default (Default(..))
 import qualified Data.Text as Text
+import Data.Text.Strict.Lens (utf8)
 import Opaleye.SqlTypes
+import Sthenauth.Core.Encoding
 
 import Opaleye
   ( Constant(..)
@@ -61,7 +64,8 @@ instance Binary JWK where
 --------------------------------------------------------------------------------
 -- | What a key can be used for.
 data KeyUse = Sig | Enc
-  deriving (Generic, Show, Eq, ToJSON, FromJSON)
+  deriving stock (Generic, Show, Eq)
+  deriving (ToJSON, FromJSON) via GenericJSON KeyUse
 
 --------------------------------------------------------------------------------
 -- | For table definitions:
@@ -111,7 +115,7 @@ instance Default Constant KeyUse (Column SqlKeyUse) where
 
 --------------------------------------------------------------------------------
 -- | Generate a new JWK.
-newJWK :: MonadRandom m => KeyUse -> m (JWK, Text)
+newJWK :: JOSE.MonadRandom m => KeyUse -> m (JWK, Text)
 newJWK keyuse = do
   jwk <- JOSE.genJWK (JOSE.RSAGenParam (4096 `div` 8))
 

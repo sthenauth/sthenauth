@@ -19,13 +19,24 @@ module Sthenauth.Core.Encoding
   , aesonOptions
 
   , GenericElm(..)
+  , HasElmType
+  , HasElmDecoder
+  , HasElmEncoder
+
+    -- * Re-exports
+  , ToJSON(..)
+  , FromJSON(..)
+  , ToJSONKey(..)
+  , FromJSONKey(..)
   ) where
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Data.Aeson (ToJSON(..), FromJSON(..), ToJSONKey(..), FromJSONKey(..))
 import qualified Data.Aeson as Aeson
 import Data.Char (isUpper)
 import qualified Data.Text as Text
+import GHC.Generics (Rep)
 import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 import qualified Generics.SOP as SOP
 import qualified Language.Elm.Name as Elm

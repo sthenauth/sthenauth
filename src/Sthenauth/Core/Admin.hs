@@ -34,6 +34,7 @@ module Sthenauth.Core.Admin
 --------------------------------------------------------------------------------
 -- Imports:
 import Control.Arrow (returnA)
+import Data.Time.Clock (UTCTime(..))
 import Iolaus.Database.Query
 import Iolaus.Database.Table
 import qualified Opaleye as O
