@@ -1,6 +1,5 @@
 CREATE TABLE emails (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v1mc(),
-  site_id     UUID NOT NULL REFERENCES sites ON DELETE CASCADE,
   account_id  UUID NOT NULL REFERENCES accounts ON DELETE CASCADE,
   email       JSONB NOT NULL CHECK (email ? 'hashed' AND LENGTH(email->>'hashed') >= 1),
   verified_at TIMESTAMP WITH TIME ZONE     NULL,
@@ -8,8 +7,8 @@ CREATE TABLE emails (
   updated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp
 );
 
-CREATE UNIQUE INDEX ON emails (site_id, ((email->>'hashed')::BYTEA));
-CREATE INDEX ON emails (site_id, account_id);
+CREATE UNIQUE INDEX ON emails (((email->>'hashed')::BYTEA));
+CREATE INDEX ON emails (account_id);
 
 CREATE TRIGGER trigger_emails_updated_at
   BEFORE UPDATE ON emails

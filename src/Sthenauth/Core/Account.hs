@@ -32,7 +32,6 @@ module Sthenauth.Core.Account
   , findAccountByUsername
   , emailHashed
   , findAccountByEmail
-  , changePassword
   ) where
 
 --------------------------------------------------------------------------------
@@ -45,7 +44,6 @@ import qualified Opaleye as O
 import Sthenauth.Core.Crypto
 import Sthenauth.Core.Email (SafeEmail)
 import Sthenauth.Core.Encoding
-import Sthenauth.Core.Site (SiteId)
 import Sthenauth.Core.Username
 
 --------------------------------------------------------------------------------
@@ -58,17 +56,10 @@ data AccountF f = Account
   { accountId :: Col f "id" AccountId SqlUuid ReadOnly
     -- ^ Primary key.
 
-  , accountSiteId :: Col f "site_id" SiteId SqlUuid ForeignKey
-    -- ^ The site this account belongs to.
-
   , accountUsername :: Col f "username" Username SqlText Nullable
     -- ^ Optional username.  Sthenauth can be configured to allow users
     -- to set a username, or they may simply authenticate with an email
     -- address, or both.
-
-  , accountPassword :: Col f "password" (Password Hashed) SqlJsonb Nullable
-    -- ^ Optional password.  Users may be authenticating via OAuth in
-    -- which case they will not have a local password.
 
   , accountCreatedAt :: Col f "created_at" UTCTime SqlTimestamptz ReadOnly
     -- ^ The time this record was created.
@@ -93,14 +84,12 @@ fromAccounts = selectTable accounts
 
 --------------------------------------------------------------------------------
 -- | Create a new account via an insert statement.
-newAccount :: SiteId -> Maybe Username -> Insert [Account]
-newAccount sid username =
+newAccount :: Maybe Username -> Insert [Account]
+newAccount username =
   toInsert $
     Account
       { accountId        = Nothing
-      , accountSiteId    = toFields sid
       , accountUsername  = O.maybeToNullable (toFields username)
-      , accountPassword  = O.null
       , accountCreatedAt = Nothing
       , accountUpdatedAt = Nothing
       }
@@ -117,9 +106,6 @@ type AccountEmailId = Key UUID AccountEmailF
 data AccountEmailF f = AccountEmail
   { emailId :: Col f "id" AccountEmailId SqlUuid ReadOnly
     -- ^ Primary key.
-
-  , emailSiteId :: Col f "site_id" SiteId SqlUuid ForeignKey
-  -- ^ The site this email address is for (foreign key).
 
   , emailAccountId :: Col f "account_id" AccountId SqlUuid ForeignKey
   -- ^ The account this email address is for (foreign key).
@@ -154,15 +140,13 @@ type AccountEmail = AccountEmailF ForHask
 -- until the account is known.
 newAccountEmail
   :: SafeEmail
-  -> SiteId
   -> Maybe UTCTime
   -> AccountId
   -> Insert Int64
-newAccountEmail email sid mvalid aid =
+newAccountEmail email mvalid aid =
   toInsert $
     AccountEmail
       { emailId         = Nothing
-      , emailSiteId     = toFields sid
       , emailAccountId  = toFields aid
       , emailAddress    = toFields email
       , emailVerifiedAt = O.maybeToNullable (toFields mvalid)
@@ -205,7 +189,6 @@ findAccountByEmail ehash = proc t1 -> do
 
   O.restrict -<
     emailAccountId t2 .== accountId t1     .&&
-    emailSiteId t2    .== accountSiteId t1 .&&
     emailHashed t2    .== O.toNullable (sqlValueJSONB ehash)
 
   returnA -< t1
@@ -217,14 +200,3 @@ findAccountByUsername un = proc t1 -> do
   let cmp field = O.lower field .== O.toFields un
   O.restrict -< O.matchNullable (O.sqlBool False) cmp (accountUsername t1)
   returnA -< t1
-
---------------------------------------------------------------------------------
-changePassword :: AccountId -> Password Hashed -> Update Int64
-changePassword aid passwd =
-  let nulled = O.toNullable (O.toFields passwd)
-  in Update
-    { uTable = accounts
-    , uUpdateWith = O.updateEasy (\a -> a {accountPassword = nulled})
-    , uWhere = \a -> accountId a .== toFields aid
-    , uReturning = rCount
-    }

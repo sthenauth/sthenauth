@@ -19,7 +19,7 @@ in nix-hs {
 
     inherit (lib.fetchGit {
       url = "https://code.devalot.com/incubator/iolaus.git";
-      rev = "4396dba915284a9d92958a7986fdf83d2db9d2f6";
+      rev = "5b6547ab081dcdf86b70702b8d39592b3c4a15f0";
     }) iolaus-crypto iolaus-opaleye iolaus-validation;
 
     zxcvbn-hs = lib.fetchGit {

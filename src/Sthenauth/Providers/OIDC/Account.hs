@@ -51,7 +51,6 @@ import qualified OpenID.Connect.TokenResponse as TR
 import Sthenauth.Core.Account
 import Sthenauth.Core.Crypto
 import Sthenauth.Core.Email
-import Sthenauth.Core.Site (SiteId)
 import Sthenauth.Providers.OIDC.Provider
 import Sthenauth.Providers.OIDC.Token
 
@@ -120,19 +119,18 @@ fromOidcAccounts = selectTable accounts_openidconnect
 -- second slot will always be Nothing.
 newOidcAccount
   :: forall sig m. Has Crypto sig m
-  => SiteId                     -- ^ The current site ID.
-  -> ProviderId                 -- ^ The provider this account belongs to.
+  => ProviderId                 -- ^ The provider this account belongs to.
   -> UTCTime                    -- ^ The current time.
   -> TokenResponse ClaimsSet    -- ^ The response from the token end-point.
   -> m ( Maybe (AccountId -> Insert Int64)
        , Maybe (AccountId -> Insert Int64)
        ) -- ^ Insert statements.
-newOidcAccount sid pid time token =
+newOidcAccount pid time token =
   case claimsToForeignAccountId (TR.idToken token) of
     Nothing  -> pure (Nothing, Nothing)
     Just sub -> do
       acctf <- fromTokenAndSubject pid time token sub
-      emailf <- emailInsertFromClaims sid (TR.idToken token)
+      emailf <- emailInsertFromClaims (TR.idToken token)
       pure (Just (toInsert . acctf), emailf)
   where
     toInsert :: OidcAccountF SqlWrite -> Insert Int64
@@ -186,15 +184,14 @@ accountsPrimaryKey pid aid acct =
 updateAccountFromToken
   :: Has Crypto sig m
   => OidcAccount             -- ^ The account to update.
-  -> SiteId                  -- ^ Current site ID.
   -> UTCTime                 -- ^ The current time.
   -> TokenResponse ClaimsSet -- ^ The response from the token end-point.
   -> m (Update Int64, Maybe (Insert Int64))
-updateAccountFromToken acct sid time token = do
+updateAccountFromToken acct time token = do
     let pid = accountProviderId acct
         sub = foreignAccountId acct
     new <- fromTokenAndSubject pid time token sub
-    email <- emailInsertFromClaims sid (TR.idToken token)
+    email <- emailInsertFromClaims (TR.idToken token)
     pure ( toUpdate . keepOptionalColumns $ new (oidcAccountId acct)
          , email <*> pure (oidcAccountId acct)
          )
@@ -266,15 +263,14 @@ selectAccountsByClaims pid claims =
 -- from the claim set.
 emailInsertFromClaims
   :: Has Crypto sig m
-  => SiteId
-  -> ClaimsSet
+  => ClaimsSet
   -> m (Maybe (AccountId -> Insert Int64))
-emailInsertFromClaims sid claims =
+emailInsertFromClaims claims =
   traverse (\(e,v) -> (,v) <$> toSafeEmail e)
     (extractEmailAddressFromClaims claims) >>= \case
       Nothing -> pure Nothing
       Just (se, ev) -> pure . Just $ \aid ->
-        newAccountEmail se sid (bool Nothing claimTime ev) aid
+        newAccountEmail se (bool Nothing claimTime ev) aid
   where
     claimTime :: Maybe UTCTime
     claimTime = claims ^. JWT.claimIat <&> coerce

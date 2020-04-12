@@ -16,21 +16,26 @@ License: Apache-2.0
 -}
 module Sthenauth.Core.Capabilities
   ( Capabilities(..)
+  , getCapabilities
   , toCapabilities
   ) where
 
 --------------------------------------------------------------------------------
-import Control.Lens ((^.))
+import Control.Lens ((^.), over, mapped)
 import qualified Data.Aeson as Aeson
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Set as Set
 import qualified Generics.SOP as SOP
 import Sthenauth.Core.Config
 import Sthenauth.Core.CurrentUser
+import Sthenauth.Core.Database
 import Sthenauth.Core.Encoding
+import Sthenauth.Core.Error
 import Sthenauth.Core.Policy
 import Sthenauth.Core.Provider
 import Sthenauth.Core.Public (Session, toSession)
+import Sthenauth.Core.Remote
+import Sthenauth.Core.URL (localhostTo)
 import qualified Sthenauth.Providers.OIDC.Public as OIDC
 
 --------------------------------------------------------------------------------
@@ -63,6 +68,27 @@ data Capabilities = Capabilities
            , HasElmDecoder Aeson.Value
            , HasElmEncoder Aeson.Value
            ) via GenericElm "Capabilities" Capabilities
+
+--------------------------------------------------------------------------------
+-- | Get the current capabilities.
+getCapabilities
+  :: ( Has Database            sig m
+     , Has (Throw Sterr)       sig m
+     )
+  => Config
+  -> Policy
+  -> Remote
+  -> CurrentUser
+  -> m Capabilities
+getCapabilities config policy remote user =
+  toCapabilities config policy
+    <$> oidcProviders
+    <*> pure user
+  where
+    -- | Fix any URLs that contain @localhost@.
+    oidcProviders = over mapped
+      (localhostTo (remote ^. requestFqdn))
+        <$> OIDC.publicProviders
 
 --------------------------------------------------------------------------------
 -- | Generate a 'Capabilities' record.

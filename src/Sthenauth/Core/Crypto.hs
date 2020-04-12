@@ -30,6 +30,7 @@ module Sthenauth.Core.Crypto
 
   , CryptoC
   , Runtime
+  , cryptonite
   , initCrypto
   , getCryptonite
   , runCrypto
@@ -187,6 +188,10 @@ makeLenses ''Keys
 
 --------------------------------------------------------------------------------
 newtype Runtime = Runtime (Cryptonite, Keys)
+
+--------------------------------------------------------------------------------
+cryptonite :: Runtime -> Cryptonite
+cryptonite (Runtime (c, _)) = c
 
 --------------------------------------------------------------------------------
 newtype CryptoC m a = CryptoC

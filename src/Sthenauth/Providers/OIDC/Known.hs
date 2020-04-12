@@ -15,12 +15,12 @@ License: Apache-2.0
 
 -}
 module Sthenauth.Providers.OIDC.Known
-  ( Known
+  ( KnownOidcProvider
   , providerName
   , logoUrl
   , discoveryUrl
   , registerUrl
-  , loadKnownProviders
+  , loadKnownOidcProviders
   ) where
 
 --------------------------------------------------------------------------------
@@ -34,24 +34,24 @@ import System.FilePath ((</>))
 
 --------------------------------------------------------------------------------
 -- | Information about a well know OIDC provider.
-data Known = Known
+data KnownOidcProvider = KnownOidcProvider
   { _providerName :: Text
   , _logoUrl      :: URL
   , _discoveryUrl :: URL
   , _registerUrl  :: URL -- ^ Where you register for an account.
   }
   deriving stock Generic
-  deriving (ToJSON, FromJSON) via GenericJSON Known
+  deriving (ToJSON, FromJSON) via GenericJSON KnownOidcProvider
 
-makeLenses ''Known
+makeLenses ''KnownOidcProvider
 
 --------------------------------------------------------------------------------
 -- | Load the known providers list from a file.
 --
 -- If the given path is 'Nothing', load the default providers file
 -- from the Sthenauth distribution.
-loadKnownProviders :: MonadIO m => Maybe FilePath -> m [Known]
-loadKnownProviders (Just path) = YAML.decodeFileThrow path
-loadKnownProviders Nothing = do
+loadKnownOidcProviders :: MonadIO m => Maybe FilePath -> m [KnownOidcProvider]
+loadKnownOidcProviders (Just path) = YAML.decodeFileThrow path
+loadKnownOidcProviders Nothing = do
   dir <- liftIO Sthenauth.getDataDir
-  loadKnownProviders (Just (dir </> "config" </> "oidc-providers.yml"))
+  loadKnownOidcProviders (Just (dir </> "config" </> "oidc-providers.yml"))

@@ -26,12 +26,12 @@ import Data.Time.Clock (UTCTime(..))
 import Iolaus.Crypto.Password (VerifyStatus(..))
 import qualified Iolaus.Crypto.Password as Crypto
 import Iolaus.Database.Query
-import Sthenauth.Core.Account as Account
 import Sthenauth.Core.Crypto
 import Sthenauth.Core.Database
 import Sthenauth.Core.Error
 import Sthenauth.Core.Policy
 import Sthenauth.Core.Remote
+import Sthenauth.Providers.Local.Account
 
 --------------------------------------------------------------------------------
 data PasswordStatus
@@ -68,18 +68,16 @@ verifyAndUpgradePassword
   => Policy
   -> RequestTime
   -> Password Clear
-  -> Account
+  -> LocalAccount
   -> m PasswordStatus
 verifyAndUpgradePassword policy rtime passwd acct =
-  case accountPassword acct of
-    Nothing -> pure PasswordIncorrect
-    Just p' -> verifyPassword passwd p' >>= \case
-      PasswordMismatch ->
-        pure PasswordIncorrect
-      PasswordsMatch ->
-        pure PasswordVerified
-      PasswordNeedsUpgrade ->
-        upgradePassword policy rtime passwd (accountId acct) $> PasswordVerified
+  verifyPassword passwd (localAccountPassword acct) >>= \case
+    PasswordMismatch ->
+      pure PasswordIncorrect
+    PasswordsMatch ->
+      pure PasswordVerified
+    PasswordNeedsUpgrade ->
+      upgradePassword policy rtime passwd acct $> PasswordVerified
 
 --------------------------------------------------------------------------------
 -- | Upgrade a password.
@@ -91,11 +89,11 @@ upgradePassword
   => Policy
   -> RequestTime
   -> Password Clear
-  -> AccountId
+  -> LocalAccount
   -> m ()
-upgradePassword policy time pw aid = do
+upgradePassword policy time pw acct = do
   let zc = zxcvbnConfig policy
       ps = Crypto.toStrongPassword zc (utctDay time) pw
   ps' <- either (const (throwUserError MustChangePasswordError)) pure ps
   ph <- toHashedPassword ps'
-  void . transaction . update $ changePassword aid ph
+  void . transaction . update $ changePassword (localAccountId acct) ph

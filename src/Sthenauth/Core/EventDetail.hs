@@ -24,7 +24,6 @@ import Data.UUID (UUID)
 import Iolaus.Database.JSON (liftJSON)
 import Sthenauth.Core.Crypto
 import Sthenauth.Core.Encoding
-import Sthenauth.Core.PostLogin
 
 --------------------------------------------------------------------------------
 -- | Specific information about an event.
@@ -43,9 +42,6 @@ data EventDetail
     }
 
   | EventSuccessfulLogin -- ^ Successfully logged in.
-    { postLoginDetails :: PostLogin
-      -- ^ Where the user went after logging in.
-    }
 
   | EventFailedOidcProviderAuth -- ^ Failed to auth with a provider.
     { attemptedProviderId :: UUID

@@ -23,6 +23,8 @@ module Sthenauth.Core.Config
   , systemSaltLabels
   , defaultConfig
   , enabledAuthenticators
+  , initializeMissingData
+  , runDatabaseMigrations
   ) where
 
 --------------------------------------------------------------------------------
@@ -46,6 +48,25 @@ data Config = Config
 
   , _systemSaltLabels :: NonEmpty Text
     -- ^ Labels for the system-wide salt values to use, in order.
+
+  , _initializeMissingData :: Bool
+    -- ^ Allow this instance of Sthenauth to initialize sub-systems as
+    -- necessary (e.g., create database tables, create new encryption
+    -- keys, etc.)
+    --
+    -- This should only be enabled on a single running instance to
+    -- avoid multi-process race conditions.
+    --
+    -- If this option is enabled then '_runDatabaseMigrations' is
+    -- automatically enabled too.
+
+  , _runDatabaseMigrations :: Bool
+    -- ^ Similar to '_initializeMissingData', this option controls
+    -- whether or not the database will be checked for out of date
+    -- migrations and upgraded automatically.
+    --
+    -- You probably want this option to always be turned on, but like
+    -- '_initializeMissingData', only for a single process.
   }
   deriving (Generic)
   deriving (ToJSON, FromJSON) via GenericJSON Config
@@ -59,6 +80,8 @@ defaultConfig baseDirectory = Config
   { _secretsPath = baseDirectory </> "secrets"
   , _symmetricKeyLabels = "Initial Symmetric Key" :| []
   , _systemSaltLabels = "Initial System Salt" :| []
+  , _initializeMissingData = True
+  , _runDatabaseMigrations = True
   }
 
 --------------------------------------------------------------------------------

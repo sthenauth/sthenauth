@@ -61,7 +61,7 @@ type OidcCookie = OidcCookieF ForHask
 -- | Save a cookie in the database so a returning end-user can be verified.
 newOidcCookie
   :: Has Crypto sig m
-  => Policy     -- ^ Site policy.
+  => Policy     -- ^ Policy.
   -> UTCTime    -- ^ Current time.
   -> SetCookie  -- ^ The cookie to save.
   -> ProviderId -- ^ The associated OIDC provider.

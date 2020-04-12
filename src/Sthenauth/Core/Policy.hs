@@ -45,6 +45,8 @@ module Sthenauth.Core.Policy
   , policyAllowsProviderType
   , assertPolicyRules
   , zxcvbnConfig
+  , sessionCookieName
+  , oidcCookieName
   ) where
 
 --------------------------------------------------------------------------------
@@ -391,3 +393,11 @@ assertPolicyRules policy rules =
 -- | Access the zxcvbn configuration.
 zxcvbnConfig :: Policy -> Zxcvbn.Config
 zxcvbnConfig _ = Zxcvbn.en_US -- FIXME: actually calculate this.
+
+--------------------------------------------------------------------------------
+sessionCookieName :: Policy -> Text
+sessionCookieName _ = "ss"
+
+--------------------------------------------------------------------------------
+oidcCookieName :: Policy -> Text
+oidcCookieName = (<> "_oidc") . sessionCookieName

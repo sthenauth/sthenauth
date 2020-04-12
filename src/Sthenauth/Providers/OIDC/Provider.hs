@@ -22,7 +22,10 @@ module Sthenauth.Providers.OIDC.Provider
   ( ProviderF(..)
   , Provider
   , ProviderId
-  , ProviderPassword(..)
+  , OidcClientId
+  , OidcClientPassword(..)
+  , newOidcProvider
+  , registerOidcProvider
   , toOidcProvider
   , providerCredentials
   , fetchDiscoveryDocument
@@ -35,6 +38,7 @@ module Sthenauth.Providers.OIDC.Provider
 
 --------------------------------------------------------------------------------
 import Control.Arrow (returnA)
+import Control.Lens ((^.))
 import Crypto.JOSE (JWKSet)
 import Data.Binary (Binary)
 import Data.Time.Clock (UTCTime)
@@ -46,18 +50,24 @@ import qualified OpenID.Connect.Authentication as A
 import OpenID.Connect.Client.Provider (Discovery, discovery, keysFromDiscovery)
 import qualified OpenID.Connect.Client.Provider as P
 import Sthenauth.Core.Crypto
+import Sthenauth.Core.Database
 import Sthenauth.Core.Error
 import qualified Sthenauth.Core.HTTP as HTTP
 import Sthenauth.Core.URL
+import Sthenauth.Providers.OIDC.Known (KnownOidcProvider)
+import qualified Sthenauth.Providers.OIDC.Known as Known
 
 --------------------------------------------------------------------------------
 -- | The primary key on the OpenID Connect providers table.
 type ProviderId = Key UUID ProviderF
 
 --------------------------------------------------------------------------------
-data ProviderPassword
-  = ProviderPlainPassword Text
-  | ProviderPasswordAssertion Text
+type OidcClientId = A.ClientID
+
+--------------------------------------------------------------------------------
+data OidcClientPassword
+  = OidcClientPlainPassword Text
+  | OidcClientPasswordAssertion Text
   deriving stock Generic
   deriving anyclass Binary
 
@@ -78,7 +88,7 @@ data ProviderF f = Provider
   , providerClientId :: Col f "client_id" Text SqlText Required
     -- ^ The client ID issued by the provider.
 
-  , providerClientSecret :: Col f "client_secret" (Secret ProviderPassword) SqlJsonb Required
+  , providerClientSecret :: Col f "client_secret" (Secret OidcClientPassword) SqlJsonb Required
     -- ^ Shared secret issued by the provider.
 
   , providerDiscoveryUrl :: Col f "discovery_url" URL SqlText Required
@@ -110,6 +120,58 @@ makeTable ''ProviderF "providers_openidconnect"
 type Provider = ProviderF ForHask
 
 --------------------------------------------------------------------------------
+newOidcProvider
+  :: (Has Crypto sig m, Has (Throw Sterr) sig m)
+  => HTTP.Client m
+  -> KnownOidcProvider
+  -> OidcClientId
+  -> OidcClientPassword
+  -> m (Insert [Provider])
+newOidcProvider http kp cid pass = do
+  safeClientSecret <- encrypt pass
+  (disco, dcache)  <- fetchDiscoveryDocument http (kp ^. Known.discoveryUrl)
+  (keys, kcache)   <- fetchProviderKeys http disco
+
+  pure $
+    toInsert $
+      Provider
+        { providerId                 = Nothing
+        , providerEnabled            = toFields True
+        , providerName               = toFields (kp ^. Known.providerName)
+        , providerLogoUrl            = toFields (kp ^. Known.logoUrl)
+        , providerClientId           = toFields cid
+        , providerClientSecret       = toFields safeClientSecret
+        , providerDiscoveryUrl       = toFields (kp ^. Known.discoveryUrl)
+        , providerDiscoveryDoc       = toFields (LiftJSON disco)
+        , providerDiscoveryExpiresAt = toFields dcache
+        , providerJwkSet             = toFields (LiftJSON keys)
+        , providerJwkSetExpiresAt    = toFields kcache
+        , providerCreatedAt          = Nothing
+        , providerUpdatedAt          = Nothing
+        }
+
+  where
+    toInsert :: ProviderF SqlWrite -> Insert [Provider]
+    toInsert p = Insert providers_openidconnect [p] (rReturning id) Nothing
+
+--------------------------------------------------------------------------------
+registerOidcProvider
+  :: ( Has Crypto        sig m
+     , Has Database      sig m
+     , Has (Throw Sterr) sig m
+     )
+  => HTTP.Client m
+  -> KnownOidcProvider
+  -> OidcClientId
+  -> OidcClientPassword
+  -> m Provider
+registerOidcProvider http kp oi op = do
+  new <- newOidcProvider http kp oi op
+  runQuery $ do
+    Just p <- insert1 new
+    pure p
+
+--------------------------------------------------------------------------------
 -- | Turn a provider record into one that can be used by the OpenID
 -- Connect library.
 toOidcProvider :: Provider -> P.Provider
@@ -128,8 +190,8 @@ providerCredentials
   -> m A.Credentials
 providerCredentials url provider = do
   sec <- decrypt (providerClientSecret provider) <&> \case
-    ProviderPlainPassword t     -> A.AssignedSecretText t
-    ProviderPasswordAssertion t -> A.AssignedAssertionText t
+    OidcClientPlainPassword t     -> A.AssignedSecretText t
+    OidcClientPasswordAssertion t -> A.AssignedAssertionText t
   pure $
     A.Credentials
       { A.assignedClientId  = providerClientId provider

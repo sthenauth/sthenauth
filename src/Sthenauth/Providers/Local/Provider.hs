@@ -17,20 +17,21 @@ License: Apache-2.0
 module Sthenauth.Providers.Local.Provider
   ( Credentials(name)
   , authenticate
+  , insertLocalAccountQuery
   , createNewLocalAccount
   ) where
 
 --------------------------------------------------------------------------------
 -- Imports:
-import Control.Lens ((^.))
+import Iolaus.Database.Query
 import Iolaus.Database.Table (getKey)
-import Sthenauth.Core.Account (accountId)
+import Sthenauth.Core.Account (Account, accountId, newAccount)
 import Sthenauth.Core.Crypto
 import Sthenauth.Core.Database
 import Sthenauth.Core.Error
+import Sthenauth.Core.Policy
 import Sthenauth.Core.Remote
-import Sthenauth.Core.Site (Site, siteId, sitePolicy)
-import Sthenauth.Providers.Local.LocalAccount
+import Sthenauth.Providers.Local.Account
 import Sthenauth.Providers.Local.Login
 import Sthenauth.Providers.Local.Password
 import Sthenauth.Providers.Types
@@ -42,26 +43,48 @@ authenticate
      , Has Database      sig m
      , Has (Throw Sterr) sig m
      )
-  => Site
-  -> Remote
+  => Policy
+  -> RequestTime
   -> Credentials
   -> m ProviderResponse
-authenticate site remote creds = do
+authenticate policy rtime creds = do
     (login, passwd) <- whenNothing (fromCredentials creds) $
       throwUserError InvalidUsernameOrEmailError
 
-    account <- getAccountFromLogin (siteId site) login >>=
-      maybe (throwUserError (AuthenticationFailedError Nothing)) pure
+    query <- accountByLogin login
 
-    verifyAndUpgradePassword policy rtime passwd account >>= \case
+    (sys, local) <- runQuery $ do
+      Just a <- select1 query
+      pure a
+
+    verifyAndUpgradePassword policy rtime passwd local >>= \case
       PasswordIncorrect ->
-        throwUserError (AuthenticationFailedError (Just . getKey . accountId $ account))
+        throwUserError (AuthenticationFailedError (Just . getKey . accountId $ sys))
       PasswordVerified ->
-        pure (SuccessfulAuthN account ExistingAccount)
+        pure (SuccessfulAuthN sys ExistingAccount)
 
-  where
-    policy = sitePolicy site
-    rtime = remote ^. requestTime
+--------------------------------------------------------------------------------
+-- | Return a database query that will insert a new local account.
+insertLocalAccountQuery
+  :: ( Has Crypto        sig m
+     , Has (Throw Sterr) sig m
+     )
+  => Policy
+  -> RequestTime
+  -> Credentials
+  -> m (Query Account)
+insertLocalAccountQuery policy rtime creds = do
+  (login, clear) <- whenNothing (fromCredentials creds) $
+    throwUserError InvalidUsernameOrEmailError
+
+  strong <- asStrongPassword policy rtime clear
+  hashed <- toHashedPassword strong
+  actF <- newLocalAccount login hashed
+
+  pure $ do
+    Just a <- insert1 (newAccount (leftToMaybe $ getLogin login))
+    mapM_ insert (actF $ accountId a)
+    pure a
 
 --------------------------------------------------------------------------------
 -- | Create a new account and log in the new user.
@@ -70,21 +93,11 @@ createNewLocalAccount
      , Has Database      sig m
      , Has (Throw Sterr) sig m
      )
-  => Site
-  -> Remote
+  => Policy
+  -> RequestTime
   -> Credentials
   -> m ProviderResponse
-createNewLocalAccount site remote creds = do
-  let policy = sitePolicy site
-      rtime  = remote ^. requestTime
-
-  (login, clear) <- whenNothing (fromCredentials creds) $
-    throwUserError InvalidUsernameOrEmailError
-
-  strong <- asStrongPassword policy rtime clear
-  hashed <- toHashedPassword strong
-  la <- toLocalAccount (siteId site) login hashed
-
-  SuccessfulAuthN
-    <$> insertLocalAccount la
-    <*> pure NewAccount
+createNewLocalAccount policy rtime creds = do
+  query <- insertLocalAccountQuery policy rtime creds
+  account <- transaction query
+  pure (SuccessfulAuthN account NewAccount)

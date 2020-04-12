@@ -73,11 +73,13 @@ common options
 common dependencies
   build-depends: base                 >= 4.9  && < 5.0
                , aeson                >= 1.3  && < 1.5
+               , async                >= 2.2  && < 2.3
                , binary               >= 0.8  && < 1.0
                , bytestring           >= 0.10 && < 0.11
                , containers           >= 0.6  && < 0.7
                , cookie               >= 0.4  && < 0.5
                , cryptonite           >= 0.25 && < 1.0
+               , directory            >= 1.3  && < 1.4
                , ekg-core             >= 0.1  && < 0.2
                , elm-syntax           >= 0.2  && < 0.3
                , email-validate       >= 2.3  && < 2.4
@@ -109,6 +111,7 @@ common dependencies
                , relude               >= 0.6  && < 0.7
                , safe-exceptions      >= 0.1  && < 0.2
                , servant              >= 0.16 && < 0.17
+               , stm                  >= 2.5  && < 2.6
                , text                 >= 1.2  && < 1.3
                , text-icu             >= 0.7  && < 0.8
                , time                 >= 1.8  && < 2.0
@@ -126,7 +129,6 @@ library
   hs-source-dirs: src
   exposed-modules:
     Sthenauth.Core.Account
-    Sthenauth.Core.Action
     Sthenauth.Core.Address
     Sthenauth.Core.Admin
     Sthenauth.Core.AuthN
@@ -142,30 +144,32 @@ library
     Sthenauth.Core.Event
     Sthenauth.Core.EventDetail
     Sthenauth.Core.HTTP
-    Sthenauth.Core.Info
-    Sthenauth.Core.JWK
     Sthenauth.Core.Policy
-    Sthenauth.Core.PostLogin
     Sthenauth.Core.Provider
     Sthenauth.Core.Public
     Sthenauth.Core.Remote
-    Sthenauth.Core.Runtime
     Sthenauth.Core.Session
-    Sthenauth.Core.Site
     Sthenauth.Core.URL
     Sthenauth.Core.Username
 
-    Sthenauth.Providers.OIDC.Known
-    Sthenauth.Providers.OIDC.Public
-    Sthenauth.Providers.OIDC.Cookie
-    Sthenauth.Providers.OIDC.Token
-    Sthenauth.Providers.OIDC.AuthN
-    Sthenauth.Providers.OIDC.Provider
-    Sthenauth.Providers.OIDC.Account
+    Sthenauth.Providers.OIDC
+      Sthenauth.Providers.OIDC.Known
+      Sthenauth.Providers.OIDC.Public
+      Sthenauth.Providers.OIDC.Cookie
+      Sthenauth.Providers.OIDC.Token
+      Sthenauth.Providers.OIDC.AuthN
+      Sthenauth.Providers.OIDC.Provider
+      Sthenauth.Providers.OIDC.Account
     Sthenauth.Providers.Types
     Sthenauth.Providers.Local.Login
     Sthenauth.Providers.Local.Password
-    Sthenauth.Providers.Local.LocalAccount
+    Sthenauth.Providers.Local.Account
     Sthenauth.Providers.Local.Provider
+
+    Sthenauth.Effect
+    Sthenauth.Effect.Algebra
+    Sthenauth.Effect.Boot
+    Sthenauth.Effect.Carrier
+    Sthenauth.Effect.Runtime
   other-modules:
     Paths_sthenauth

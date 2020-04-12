@@ -63,9 +63,7 @@ import Sthenauth.Core.Crypto
 import Sthenauth.Core.Database
 import Sthenauth.Core.Error
 import Sthenauth.Core.Policy
-import Sthenauth.Core.PostLogin
 import Sthenauth.Core.Remote
-import Sthenauth.Core.Site
 import Web.Cookie
 
 --------------------------------------------------------------------------------
@@ -184,20 +182,19 @@ issueSession
      , Has Crypto   sig m
      , Has (Throw Sterr) sig m
      )
-  => Site
+  => Policy
   -> Remote
   -> Account
-  -> m (Session, ClearSessionKey, PostLogin)
-issueSession site remote acct = do
+  -> m (Session, ClearSessionKey)
+issueSession policy remote acct = do
   (clear, key) <- newSessionKey
 
-  let sessionW = newSession (accountId acct) remote (sitePolicy site) key
-      query = insertSession (sitePolicy site ^. maxSessionsPerAccount) sessionW
-      plogin = postLogin site remote
+  let sessionW = newSession (accountId acct) remote policy key
+      query = insertSession (policy ^. maxSessionsPerAccount) sessionW
 
   transaction query >>= \case
     Nothing -> throwError (RuntimeError "failed to create a session")
-    Just session -> return (session, clear, plogin)
+    Just session -> return (session, clear)
 
 --------------------------------------------------------------------------------
 -- | Try to insert a single session into the database.

@@ -41,11 +41,9 @@ import Sthenauth.Core.Event
 import Sthenauth.Core.EventDetail
 import Sthenauth.Core.HTTP
 import Sthenauth.Core.Policy
-import Sthenauth.Core.PostLogin
 import Sthenauth.Core.Provider (ProviderType(..))
 import Sthenauth.Core.Remote
 import Sthenauth.Core.Session
-import Sthenauth.Core.Site (Site, sessionCookieName, sitePolicy)
 import Sthenauth.Core.URL
 import qualified Sthenauth.Providers.Local.Provider as Local
 import qualified Sthenauth.Providers.OIDC.AuthN as OIDC
@@ -64,7 +62,7 @@ data RequestAuthN
 --------------------------------------------------------------------------------
 data ResponseAuthN
   = LoginFailed
-  | LoggedIn PostLogin
+  | LoggedIn
   | NextStep AdditionalAuthStep
   | LoggedOut
 
@@ -86,21 +84,21 @@ requestAuthN
      , Has (State CurrentUser) sig m
      , MonadRandom                 m
      )
-  => Site
+  => Policy
   -> Remote
   -> RequestAuthN
   -> m (Maybe SetCookie, ResponseAuthN)
-requestAuthN site remote req = do
-  void (logout site remote)
+requestAuthN policy remote req = do
+  void (logout policy remote)
 
-  dispatchRequest site remote req >>= \case
+  dispatchRequest policy remote req >>= \case
     ProcessAdditionalStep step mcookie ->
       pure (mcookie, NextStep step)
 
     SuccessfulAuthN account status -> do
       -- Fire events
-      (sess, key, postLogin) <- issueSession site remote account
-      user <- currentUserFromSession site (remote ^. requestTime) account sess
+      (sess, key) <- issueSession policy remote account
+      user <- currentUserFromSession policy (remote ^. requestTime) account sess
       put user
 
       fireEvents user remote $ catMaybes
@@ -108,14 +106,14 @@ requestAuthN site remote req = do
             ExistingAccount -> Nothing
             NewAccount -> Just . EventAccountCreated . getKey . accountId $ account
 
-        , Just (EventSuccessfulLogin postLogin)
+        , Just EventSuccessfulLogin
         ]
 
-      let cookie = makeSessionCookie (sessionCookieName site) key sess
-      pure (Just cookie, LoggedIn postLogin)
+      let cookie = makeSessionCookie (sessionCookieName policy) key sess
+      pure (Just cookie, LoggedIn)
 
     SuccessfulLogout cookie ->
-      let c = cookie <|> Just (resetSessionCookie $ sessionCookieName site)
+      let c = cookie <|> Just (resetSessionCookie $ sessionCookieName policy)
       in pure (c, LoggedOut)
 
     FailedAuthN ue detail -> do
@@ -130,10 +128,10 @@ logout
      , Has (Throw Sterr)       sig m
      , Has (State CurrentUser) sig m
      )
-  => Site
+  => Policy
   -> Remote
   -> m SetCookie
-logout site remote = do
+logout policy remote = do
   user <- get
   case sessionFromCurrentUser user of
     Nothing -> pure reset
@@ -147,7 +145,7 @@ logout site remote = do
       pure reset
   where
     reset :: SetCookie
-    reset = resetSessionCookie (sessionCookieName site)
+    reset = resetSessionCookie (sessionCookieName policy)
 
 --------------------------------------------------------------------------------
 dispatchRequest
@@ -159,48 +157,48 @@ dispatchRequest
      , Has (State CurrentUser) sig m
      , MonadRandom                 m
      )
-  => Site
+  => Policy
   -> Remote
   -> RequestAuthN
   -> m ProviderResponse
-dispatchRequest site remote = \case
+dispatchRequest policy remote = \case
   LoginWithLocalCredentials creds -> do
-    assertPolicyRules (sitePolicy site)
+    assertPolicyRules policy
       [ policyAllowsProviderType LocalProvider
       , policyAllowsLocalAccountLogin
       ]
-    catchError (Local.authenticate site remote creds)
+    catchError (Local.authenticate policy (remote ^. requestTime) creds)
                (onLocalError creds)
 
   CreateLocalAccountWithCredentials creds -> do
-    assertPolicyRules (sitePolicy site)
+    assertPolicyRules policy
       [ policyAllowsProviderType LocalProvider
       , policyAllowsLocalAccountCreation
       ]
-    catchError (Local.createNewLocalAccount site remote creds)
+    catchError (Local.createNewLocalAccount policy (remote ^. requestTime) creds)
                (onLocalError creds)
 
   LoginWithOidcProvider url login -> do
-    assertPolicyRules (sitePolicy site)
+    assertPolicyRules policy
       [ policyAllowsProviderType OidcProvider
       ]
     catchError
-      (OIDC.requestOIDC site remote (OIDC.LoginWithOidcProvider url login))
+      (OIDC.requestOIDC remote policy (OIDC.LoginWithOidcProvider url login))
       (onOidcError (show login))
 
   FinishLoginWithOidcProvider url browser -> do
-    assertPolicyRules (sitePolicy site)
+    assertPolicyRules policy
       [ policyAllowsProviderType OidcProvider
       ]
     catchError
-      (OIDC.requestOIDC site remote (OIDC.SuccessfulReturnFromProvider url browser))
+      (OIDC.requestOIDC remote policy (OIDC.SuccessfulReturnFromProvider url browser))
       (onOidcError "unavailable: browser return from OIDC provider authN")
 
   ProcessFailedOidcProviderLogin failure ->
-    OIDC.requestOIDC site remote (OIDC.FailedReturnFromProvider failure)
+    OIDC.requestOIDC remote policy (OIDC.FailedReturnFromProvider failure)
 
   Logout -> do
-    cookie <- logout site remote
+    cookie <- logout policy remote
     pure (SuccessfulLogout (Just cookie))
 
   where

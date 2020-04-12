@@ -64,7 +64,6 @@ data Sterr
   | MissingConfigError FilePath
   | MissingDefaultConfigError FilePath FilePath
   | MissingSecretsDir FilePath
-  | MissingSiteError
   | RuntimeError Text
   | HttpException SomeException
   | OidcProviderError SomeException

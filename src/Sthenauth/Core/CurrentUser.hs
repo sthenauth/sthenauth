@@ -45,9 +45,9 @@ import Sthenauth.Core.Admin
 import Sthenauth.Core.Crypto
 import Sthenauth.Core.Database
 import Sthenauth.Core.Error
+import Sthenauth.Core.Policy
 import Sthenauth.Core.Remote
 import Sthenauth.Core.Session
-import Sthenauth.Core.Site
 import Web.Cookie
 
 --------------------------------------------------------------------------------
@@ -79,14 +79,14 @@ currentUserFromHeaders
      , Has Crypto        sig m
      , Has (Throw Sterr) sig m
      )
-  => Site
+  => Policy
   -> RequestTime
   -> HTTP.RequestHeaders
   -> m CurrentUser
-currentUserFromHeaders site rtime hs =
+currentUserFromHeaders policy rtime hs =
   case sessionKeyFromHeaders hs of
     Nothing  -> return NotLoggedIn
-    Just sid -> currentUserFromSessionKey site rtime sid
+    Just sid -> currentUserFromSessionKey policy rtime sid
 
 --------------------------------------------------------------------------------
 -- | Create a 'CurrentUser' from the given 'SessionId'.
@@ -95,23 +95,22 @@ currentUserFromSessionKey
      , Has Crypto        sig m
      , Has (Throw Sterr) sig m
      )
-  => Site
+  => Policy
   -> RequestTime
   -> ClearSessionKey
   -> m CurrentUser
-currentUserFromSessionKey site rtime clear = do
+currentUserFromSessionKey policy rtime clear = do
     key <- toSessionKey clear
     user <- runQuery (select1 $ query key) >>= \case
       Nothing -> return NotLoggedIn
       Just (s, a, t) -> pure (unsafeMkCU s a t)
-    user <$ recordUserActivity site rtime user
+    user <$ recordUserActivity policy rtime user
   where
     query
       :: SessionKey
       -> Select (SessionF SqlRead, AccountF SqlRead, AdminF ForceNullable)
     query key = proc () -> do
       (t1, t2) <- findSessionAccount key -< ()
-      O.restrict -< accountSiteId t2 O..== O.toFields (siteId site)
       t3 <- accountsAdminJoin -< t2
       returnA -< (t1, t2, t3)
 
@@ -122,16 +121,15 @@ currentUserFromSession
      ( Has Database      sig m
      , Has (Throw Sterr) sig m
      )
-  => Site
+  => Policy
   -> RequestTime
   -> Account
   -> Session
   -> m CurrentUser
-currentUserFromSession site rtime account session =
-  if accountId account == sessionAccountId session &&
-     accountSiteId account == siteId site
+currentUserFromSession policy rtime account session =
+  if accountId account == sessionAccountId session
     then do user <- go
-            user <$ recordUserActivity site rtime user
+            user <$ recordUserActivity policy rtime user
     else return NotLoggedIn
 
   where
@@ -184,11 +182,11 @@ recordUserActivity
      ( Has Database      sig m
      , Has (Throw Sterr) sig m
      )
-  => Site
+  => Policy
   -> RequestTime
   -> CurrentUser
   -> m ()
-recordUserActivity site rtime = \case
+recordUserActivity policy rtime = \case
     NotLoggedIn         -> pass
     LoggedInAccount s _ -> go s
     LoggedInAdmin s _ _ -> go s
@@ -197,7 +195,7 @@ recordUserActivity site rtime = \case
     go = void
        . runQuery
        . update
-       . recordSessionActivity (sitePolicy site) rtime
+       . recordSessionActivity policy rtime
        . sessionId
 
 --------------------------------------------------------------------------------
