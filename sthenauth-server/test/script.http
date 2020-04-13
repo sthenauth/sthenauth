@@ -1,0 +1,53 @@
+############################################################################
+# Get a list of signing keys:
+GET http://localhost:3001/auth/keys
+
+############################################################################
+# Get a list of capabilities.
+GET http://localhost:3001/auth/capabilities
+
+############################################################################
+# Create a new account:
+POST http://localhost:3001/auth/create
+Content-Type: application/json
+
+{
+  "name": "example@example.com",
+  "password": "Leiqu4noo7ahdah0eek3"
+}
+
+############################################################################
+# Login:
+POST http://localhost:3001/auth/login
+Content-Type: application/json
+
+{
+  "name": "example@example.com",
+  "password": "Leiqu4noo7ahdah0eek3"
+}
+
+############################################################################
+# Logout:
+DELETE http://localhost:3001/auth/logout
+Content-Type: application/json
+Cookie: ss=xxx
+
+############################################################################
+# Login with incorrect password:
+POST http://localhost:3001/auth/login
+Content-Type: application/json
+
+{
+  "name": "example@example.com",
+  "password": "Leiqu4noo7ahdah00000"
+}
+
+
+############################################################################
+# Ping with no session:
+GET http://localhost:3001/auth/ping
+
+############################################################################
+# Ping with a session:
+GET http://localhost:3001/auth/ping
+Cookie: ss=xxx

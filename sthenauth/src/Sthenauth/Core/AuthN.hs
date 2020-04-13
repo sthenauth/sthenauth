@@ -136,7 +136,7 @@ logout policy remote = do
   case sessionFromCurrentUser user of
     Nothing -> pure reset
     Just session -> do
-      -- | FIXME: give the provider a chance to clean up session
+      -- FIXME: give the provider a chance to clean up session
       -- details then delete the session object.
       fireEvents user remote [EventLogout . getKey $ sessionAccountId session]
       runQuery (deleteSession (sessionId session))
