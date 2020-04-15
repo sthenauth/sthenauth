@@ -6,4 +6,5 @@ let
 in
 {
   sthenauth = import ./sthenauth { inherit pkgs; };
+  sthenauth-certauth = import ./sthenauth-certauth { inherit pkgs; };
 }

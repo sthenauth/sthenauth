@@ -31,7 +31,9 @@ module Sthenauth.CertAuth.Effect
 --------------------------------------------------------------------------------
 -- Imports:
 import Control.Algebra
+import Data.Time.Clock (UTCTime)
 import qualified Data.X509 as X509
+import GHC.Generics (Generic1)
 
 --------------------------------------------------------------------------------
 -- | A certificate chain, the leaf certificate's private key, and the

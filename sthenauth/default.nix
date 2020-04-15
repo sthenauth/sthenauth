@@ -3,5 +3,5 @@
 
 pkgs.nix-hs {
   cabal = ./sthenauth.cabal;
-  overrides = import ../nix/overrides.nix;
+  overrides = import ../nix/overrides-sans-sthenauth.nix;
 }

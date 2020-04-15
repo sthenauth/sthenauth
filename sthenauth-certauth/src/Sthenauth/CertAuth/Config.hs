@@ -27,6 +27,7 @@ module Sthenauth.CertAuth.Config
   , rootCertMaxAgeMonths
   , intermediateCertMaxAgeMonths
   , leafCertMaxAgeMonths
+  , allowDatabaseMigration
   ) where
 
 --------------------------------------------------------------------------------
@@ -87,6 +88,9 @@ data CertAuthConfig = CertAuthConfig
 
   , _lifespan :: Lifespan
     -- ^ Details about how long certificates can be active.
+
+  , _allowDatabaseMigration :: Bool
+    -- ^ Can this instance of CertAuth run database migrations?
   }
   deriving (Generic)
   deriving (ToJSON) via GenericJSON CertAuthConfig
@@ -97,18 +101,20 @@ makeLenses ''CertAuthConfig
 -- | Default certificate authority configuration.
 defaultCertAuthConfig :: CertAuthConfig
 defaultCertAuthConfig =  CertAuthConfig
-  { _commonNamePrefix = "Sthenauth Certificate Authority"
-  , _certAlgo = RSA4096
-  , _certHash = SHA2_512
-  , _lifespan = defaultLifespan
+  { _commonNamePrefix       = "Sthenauth Certificate Authority"
+  , _certAlgo               = RSA4096
+  , _certHash               = SHA2_512
+  , _lifespan               = defaultLifespan
+  , _allowDatabaseMigration = True
   }
 
 instance FromJSON CertAuthConfig where
   parseJSON = Aeson.withObject "CertAuth Config" $ \v ->
     CertAuthConfig
-      <$> v .:? "common_name_prefix" .!= _commonNamePrefix
-      <*> v .:? "cert_algo"          .!= _certAlgo
-      <*> v .:? "cert_hash"          .!= _certHash
-      <*> v .:? "lifespan"           .!= _lifespan
+      <$> v .:? "common_name_prefix"       .!= _commonNamePrefix
+      <*> v .:? "cert_algo"                .!= _certAlgo
+      <*> v .:? "cert_hash"                .!= _certHash
+      <*> v .:? "lifespan"                 .!= _lifespan
+      <*> v .:? "allow_database_migration" .!= _allowDatabaseMigration
     where
       CertAuthConfig{..} = defaultCertAuthConfig

@@ -22,10 +22,9 @@ module Sthenauth.CertAuth.TLS
 
 --------------------------------------------------------------------------------
 -- Imports:
-import Control.Carrier.Database hiding (Runtime)
-import Control.Carrier.Error.Either hiding (Error)
 import Control.Concurrent.MVar (modifyMVar)
 import Control.Exception (throwIO)
+import Control.Lens ((^.), _1, _2, _3)
 import Data.Default.Class (def)
 import Data.Time.Clock (getCurrentTime)
 import qualified Data.X509 as X509
@@ -35,7 +34,6 @@ import qualified Network.TLS as TLS
 import qualified Network.Wai.Handler.WarpTLS as TLS
 import Sthenauth.CertAuth.Carrier
 import Sthenauth.Core.Error
-import Sthenauth.Core.Runtime
 
 --------------------------------------------------------------------------------
 -- | Create the credentials structure needed by the TLS package.
@@ -45,7 +43,7 @@ serverCredsToTLSCredentials sc = TLS.Credentials [(sc ^. _2, sc ^. _3)]
 --------------------------------------------------------------------------------
 -- | Create TLS settings for the Warp web server which include an
 -- auto-generated TLS certificate chain.
-serverSettingsForTLS :: Runtime -> IO TLS.TLSSettings
+serverSettingsForTLS :: CertAuthEnv -> IO TLS.TLSSettings
 serverSettingsForTLS env = do
     creds <- getCredentials
     var   <- newTVarIO $! creds
@@ -97,7 +95,6 @@ serverSettingsForTLS env = do
     getCredentials :: IO ServerCreds
     getCredentials
       = fetchServerCredentials
-      & runCertAuth (rtCertAuth env)
-      & runDatabase (rtDb env)
+      & runCertAuth env
       & runError
-      & (>>= either (\(e :: BaseError) -> throwIO e) pure)
+      & (>>= either (\(e :: Sterr) -> throwIO e) pure)

@@ -32,12 +32,13 @@ module Sthenauth.CertAuth.Carrier
 --------------------------------------------------------------------------------
 -- Imports:
 import Control.Algebra
+import qualified Control.Carrier.Database as DB
 import Control.Carrier.Reader
-import Control.Lens.TH (makeLenses)
+import Control.Lens ((^.), _2, over, makeLenses)
 import Control.Monad.Crypto.Cryptonite
 import Data.List (minimumBy)
 import Data.Time.Calendar (addGregorianMonthsRollOver)
-import Data.Time.Clock (getCurrentTime)
+import Data.Time.Clock (UTCTime(..), getCurrentTime)
 import qualified Data.UUID as UUID
 import qualified Data.X509 as X509
 import Iolaus.Crypto.PEM
@@ -45,12 +46,14 @@ import Iolaus.Crypto.X509
 import Iolaus.Database.Query (SelectArr, select1, toFields)
 import Iolaus.Database.Table
 import qualified Opaleye as O
+import Paths_sthenauth_certauth (getDataDir)
+import Sthenauth.CertAuth.Certificate
 import Sthenauth.CertAuth.Config
 import Sthenauth.CertAuth.Effect
-import Sthenauth.Core.Certificate
+import Sthenauth.Core.Crypto
+import Sthenauth.Core.Database
 import Sthenauth.Core.Error
-import Sthenauth.Crypto.Effect
-import Sthenauth.Database.Effect
+import System.FilePath ((</>))
 import System.Random (randomIO)
 
 --------------------------------------------------------------------------------
@@ -86,6 +89,7 @@ commonNameToCertUse = \case
 data CertAuthEnv = CertAuthEnv
   { _envConfig     :: CertAuthConfig -- ^ Configuration.
   , _envSoftCrypto :: Cryptonite     -- ^ Cryptonite runtime for the Root env.
+  , _envDatabase   :: DB.Runtime     -- ^ For database actions.
   }
 
 makeLenses ''CertAuthEnv
@@ -97,24 +101,33 @@ newtype CertAuthC m a = CertAuthC
 
 --------------------------------------------------------------------------------
 type CertAuthDeps sig m
-  = ( MonadIO m
-    , Has Database sig m
-    , Has Error    sig m
+  = ( MonadIO               m
+    , Has (Throw Sterr) sig m
     )
 
 --------------------------------------------------------------------------------
 instance CertAuthDeps sig m => Algebra (CertAuth :+: sig) (CertAuthC m) where
   alg = \case
     R other -> CertAuthC (alg (R (handleCoercible other)))
-    L (FetchServerCredentials next) -> findOrCreateServerCreds >>= next
+    L (FetchServerCredentials k) -> findOrCreateServerCreds >>= k
+
+--------------------------------------------------------------------------------
+-- | Lift database effects into 'CertAuthC'.
+liftDB
+  :: (MonadIO m, Algebra sig m)
+  => DB.DatabaseC (CertAuthC m) a
+  -> CertAuthC m a
+liftDB action = do
+  env <- CertAuthC ask
+  action & DB.runDatabase (env ^. envDatabase)
 
 --------------------------------------------------------------------------------
 -- | Find/create a TLS certificate chain.
 findOrCreateServerCreds
-  :: (MonadIO m, Has Database sig m, Has Error sig m)
+  :: (MonadIO m, Has (Throw Sterr) sig m)
   => CertAuthC m ServerCreds
 findOrCreateServerCreds =
-  runQuery (select1 (selectChain LocalhostCert)) >>= \case
+  liftDB (runQuery (select1 (selectChain LocalhostCert))) >>= \case
     Nothing -> createCertificateForLocalhost
     Just (lc, ic, rc) -> do
       (expire, _, chain) <- maybe die pure (toCertChain [lc, ic, rc])
@@ -130,15 +143,14 @@ findOrCreateServerCreds =
 -- | Create a leaf TLS certificate for a web server and return the
 -- certificate chain.
 createCertificateForLocalhost
-  :: ( MonadIO          m
-     , Has Database sig m
-     , Has Error    sig m
+  :: ( MonadIO               m
+     , Has (Throw Sterr) sig m
      )
   => CertAuthC m ServerCreds
 createCertificateForLocalhost = do
   env           <- CertAuthC ask
   uuid          <- liftIO randomIO
-  (root, inter) <- findOrCreateIntermediateCert env
+  (root, inter) <- liftDB (findOrCreateIntermediateCert env)
   (pub, priv)   <- generateLeafKeyPair env (labelFromUUID uuid)
   range         <- calcCertTimeRange env LocalhostCert
 
@@ -147,7 +159,7 @@ createCertificateForLocalhost = do
 
   cert <- createAndSignCert
             env uuid range LocalhostName (Just inter)
-            pub forTLS interSign >>= writeCertToDb
+            pub forTLS interSign >>= liftDB . writeCertToDb
 
   let chain  = [cert, inter, root]
       expire = expiresAt (minimumBy (comparing expiresAt) chain)
@@ -159,7 +171,7 @@ createCertificateForLocalhost = do
 --------------------------------------------------------------------------------
 -- | Run a crypto operation inside the root environment.
 withRootCrypto
-  :: (MonadIO m, Has Error sig m)
+  :: (MonadIO m, Has (Throw Sterr) sig m)
   => Cryptonite -> CryptoniteT m a -> m a
 withRootCrypto crypto n =
   runCryptoniteT crypto n >>= \case
@@ -171,13 +183,13 @@ withRootCrypto crypto n =
 --
 -- NOTE: For now this is just an alias for the root environment.
 withIntermediateCrypto
-  :: (MonadIO m, Has Error sig m)
+  :: (MonadIO m, Has (Throw Sterr) sig m)
   => Cryptonite -> CryptoniteT m a -> m a
 withIntermediateCrypto = withRootCrypto
 
 --------------------------------------------------------------------------------
 generateLeafKeyPair
-  :: (MonadIO m, Has Error sig m)
+  :: (MonadIO m, Has (Throw Sterr) sig m)
   => CertAuthEnv -> Label -> m (PublicKey, X509.PrivKey)
 generateLeafKeyPair env label =
   withIntermediateCrypto (env ^. envSoftCrypto) $ do
@@ -188,7 +200,7 @@ generateLeafKeyPair env label =
 
 --------------------------------------------------------------------------------
 signCertWith
-  :: (MonadIO m, Has Error sig m)
+  :: (MonadIO m, Has (Throw Sterr) sig m)
   => CertAuthEnv ->  X509.Certificate -> SignWith -> m X509.SignedCertificate
 signCertWith env cert = \case
     SignWithRootKey key ->
@@ -209,9 +221,9 @@ signCertWith env cert = \case
 -- | Helper function to find a certificate in the database, or if one
 -- can't be found, create a new one.
 findOrCreateCaCert
-  :: ( MonadIO          m
-     , Has Database sig m
-     , Has Error    sig m
+  :: ( MonadIO               m
+     , Has Database      sig m
+     , Has (Throw Sterr) sig m
      )
   => CertAuthEnv
 
@@ -239,9 +251,9 @@ findOrCreateCaCert env certUse query gen =
 --------------------------------------------------------------------------------
 -- | Find the active root certificate or create a new one.
 findOrCreateRootCert
-  :: ( MonadIO          m
-     , Has Database sig m
-     , Has Error    sig m
+  :: ( MonadIO               m
+     , Has Database      sig m
+     , Has (Throw Sterr) sig m
      )
   => CertAuthEnv -> m Certificate
 findOrCreateRootCert env =
@@ -251,9 +263,9 @@ findOrCreateRootCert env =
 --------------------------------------------------------------------------------
 -- | Find the active intermediate certificate or create a new one.
 findOrCreateIntermediateCert
-  :: ( MonadIO          m
-     , Has Database sig m
-     , Has Error    sig m
+  :: ( MonadIO               m
+     , Has Database      sig m
+     , Has (Throw Sterr) sig m
      )
   => CertAuthEnv -> m (Certificate, Certificate)
 findOrCreateIntermediateCert env = do
@@ -324,9 +336,9 @@ createAndSignCert env uuid range' cn parent pub modF signF = do
 --------------------------------------------------------------------------------
 -- | Create a self-signed root certificate and save it to the database.
 createRootCert
-  :: ( MonadIO          m
-     , Has Database sig m
-     , Has Error    sig m
+  :: ( MonadIO               m
+     , Has Database      sig m
+     , Has (Throw Sterr) sig m
      )
   => CertAuthEnv
   -> UUID               -- ^ The UUID to use.
@@ -348,9 +360,9 @@ createRootCert env uuid range = do
 -- | Create an intermediate certificate, signed by the root
 -- certificate, and save it to the database.
 createIntermediateCert
-  :: ( MonadIO          m
-     , Has Database sig m
-     , Has Error    sig m
+  :: ( MonadIO               m
+     , Has Database      sig m
+     , Has (Throw Sterr) sig m
      )
   => CertAuthEnv
   -> Certificate   -- ^ The root certificate
@@ -372,8 +384,8 @@ createIntermediateCert env root uuid range = do
 --------------------------------------------------------------------------------
 -- | Write a certificate into the database.  Throws an error on failure.
 writeCertToDb
-  :: ( Has Database sig m
-     , Has Error    sig m
+  :: ( Has Database      sig m
+     , Has (Throw Sterr) sig m
      )
   => CertificateF SqlWrite
   -> m Certificate
@@ -428,15 +440,23 @@ labelFromCert :: Certificate -> Label
 labelFromCert = labelFromUUID . getKey . pk
 
 --------------------------------------------------------------------------------
--- | Create the run-time environment needed by 'runCertAuthT'.
+-- | Create the run-time environment needed by 'runCertAuth'.
 initCertAuth
-  :: CertAuthConfig
+  :: (MonadIO m, Has (Throw Sterr) sig m)
+  => CertAuthConfig
   -> Cryptonite
-  -> CertAuthEnv
-initCertAuth = CertAuthEnv
+  -> DB.Runtime
+  -> m CertAuthEnv
+initCertAuth conf crypto db = do
+  when (conf ^. allowDatabaseMigration) $ DB.runDatabase db $ do
+    dir <- liftIO getDataDir
+    DB.migrate (dir </> "schema") DB.MigrateVerbosely >>= \case
+      DB.MigrationError e -> throwError (RuntimeError (toText e))
+      DB.MigrationSuccess -> pass
+  pure (CertAuthEnv conf crypto db)
 
 --------------------------------------------------------------------------------
--- | Discharge the 'MonadCertAuth' constraint from an action.
+-- | Discharge the 'CertAuth' effect from an action.
 runCertAuth
   :: CertAuthEnv
   -> CertAuthC m a
