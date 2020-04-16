@@ -16,8 +16,11 @@ License: Apache-2.0
 -}
 module Sthenauth.Effect.Algebra
   ( Sthenauth(..)
+  , getCapabilitiesEither
+  , getCapabilities
   , getCurrentUser
   , setCurrentUser
+  , getCurrentRemote
   , createAccountEither
   , createAccount
   , loginWithCredentialsEither
@@ -37,8 +40,10 @@ module Sthenauth.Effect.Algebra
 import Control.Algebra
 import GHC.Generics (Generic1)
 import Sthenauth.Core.AuthN (ResponseAuthN)
+import Sthenauth.Core.Capabilities (Capabilities)
 import Sthenauth.Core.CurrentUser (CurrentUser)
 import Sthenauth.Core.Error (Sterr)
+import Sthenauth.Core.Remote (Remote)
 import Sthenauth.Core.Session (ClearSessionKey)
 import Sthenauth.Core.URL (URL)
 import Sthenauth.Providers.Local.Provider (Credentials)
@@ -50,8 +55,10 @@ type AuthRes = Either Sterr (Maybe SetCookie, ResponseAuthN)
 
 --------------------------------------------------------------------------------
 data Sthenauth m k
-  = GetCurrentUser (CurrentUser -> m k)
+  = GetCapabilities (Either Sterr Capabilities -> m k)
+  | GetCurrentUser (CurrentUser -> m k)
   | SetCurrentUser ClearSessionKey (CurrentUser -> m k)
+  | GetCurrentRemote (Remote -> m k)
   | CreateAccount Credentials (AuthRes -> m k)
   | LoginWithCredentials Credentials (AuthRes -> m k)
   | LoginWithOidcProvider URL OidcLogin (AuthRes -> m k)
@@ -68,6 +75,19 @@ data Sthenauth m k
   deriving anyclass (HFunctor, Effect)
 
 --------------------------------------------------------------------------------
+-- | Access the capabilities of this Sthenauth instance.
+getCapabilitiesEither :: Has Sthenauth sig m => m (Either Sterr Capabilities)
+getCapabilitiesEither = send (GetCapabilities pure)
+
+--------------------------------------------------------------------------------
+getCapabilities
+  :: ( Has Sthenauth     sig m
+     , Has (Throw Sterr) sig m
+     )
+  => m Capabilities
+getCapabilities = getCapabilitiesEither >>= either throwError pure
+
+--------------------------------------------------------------------------------
 -- | Access the current user.
 getCurrentUser :: Has Sthenauth sig m => m CurrentUser
 getCurrentUser = send (GetCurrentUser pure)
@@ -76,6 +96,11 @@ getCurrentUser = send (GetCurrentUser pure)
 -- | Set the current user given a session key.
 setCurrentUser :: Has Sthenauth sig m => ClearSessionKey -> m CurrentUser
 setCurrentUser = send . (`SetCurrentUser` pure)
+
+--------------------------------------------------------------------------------
+-- | Access the current remote user information.
+getCurrentRemote :: Has Sthenauth sig m => m Remote
+getCurrentRemote = send (GetCurrentRemote pure)
 
 --------------------------------------------------------------------------------
 -- | Create a new, local account.  Uses 'Either' to handle errors.
@@ -147,6 +172,11 @@ loginWithOidcProvider url =
     >=> either throwError pure
 
 --------------------------------------------------------------------------------
+-- | Process the provider response.
+--
+-- NOTE: The cookie data in the 'UserReturnFromRedirect' value can be
+-- an entire @Cookie:@ header.  In that case just the OIDC cookie is
+-- extracted and passed along to the OpenID Connect library.
 finishLoginWithOidcProviderEither
   :: Has Sthenauth sig m
   => URL
@@ -168,6 +198,11 @@ finishLoginWithOidcProvider url =
     >=> either throwError pure
 
 --------------------------------------------------------------------------------
+-- | Process a failed provider login.
+--
+-- NOTE: The cookie data in the 'IncomingOidcProviderError' value can
+-- be an entire @Cookie:@ header.  In that case just the OIDC cookie
+-- is extracted and passed along to the OpenID Connect library.
 processFailedOidcProviderLoginEither
   :: Has Sthenauth sig m
   => IncomingOidcProviderError

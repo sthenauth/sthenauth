@@ -17,7 +17,6 @@ License: Apache-2.0
 module Sthenauth.API.Routes
   ( Cookies(..)
   , SetCookie
-  , GetKeys
   , GetSession
   , GetCapabilities
   , CreateLocalAccount
@@ -36,13 +35,13 @@ module Sthenauth.API.Routes
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Control.Lens ((^.), (.~), (%~))
 import Servant.API
 import Servant.Links
 import Sthenauth.Core.AuthN
 import Sthenauth.Core.Capabilities
-import Sthenauth.Core.JWK
 import qualified Sthenauth.Core.Public as Public
-import Sthenauth.Core.Site (Site)
+import Sthenauth.Core.Remote (Remote, requestFqdn)
 import Sthenauth.Core.URL
 import Sthenauth.Providers.Local.Login
 import qualified Sthenauth.Providers.OIDC.AuthN as OIDC
@@ -60,11 +59,6 @@ instance FromHttpApiData Cookies where
 --------------------------------------------------------------------------------
 -- | Type used when setting a cookie.
 type SetCookie a = Headers '[Header "Set-Cookie" WC.SetCookie] a
-
---------------------------------------------------------------------------------
-type GetKeys
-  = "keys"
-  :> Get '[JSON] JWKSet
 
 --------------------------------------------------------------------------------
 type GetCapabilities
@@ -121,8 +115,7 @@ type OidcAPI
 
 --------------------------------------------------------------------------------
 -- | Servant API type.
-type API = GetKeys
-      :<|> GetCapabilities
+type API = GetCapabilities
       :<|> GetSession
       :<|> LocalLogin
       :<|> GlobalLogout
@@ -147,9 +140,11 @@ finalapi :: Proxy FinalAPI
 finalapi = Proxy
 
 --------------------------------------------------------------------------------
-oidcRedirectURL :: Site -> URL
-oidcRedirectURL site =
+oidcRedirectURL :: Remote -> URL
+oidcRedirectURL remote =
   let done = Proxy :: Proxy ("auth" :> "oidc" :> OidcReturnSucc)
       uri  = linkURI (safeLink api done mempty mempty)
-      path = "/" <> toText (uriPath uri)
-  in site ^. url & urlPath .~ path
+  in uri & urlDomain .~ (remote ^. requestFqdn)
+         & urlScheme .~ "https:"
+         & urlPath   %~ ("/" <>)
+         & urlFromURI

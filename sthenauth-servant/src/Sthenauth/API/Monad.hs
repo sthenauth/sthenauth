@@ -15,61 +15,76 @@ License: Apache-2.0
 
 -}
 module Sthenauth.API.Monad
-  ( runRequest
+  ( Action
+  , runRequest
   ) where
 
 --------------------------------------------------------------------------------
 -- Imports:
-import Control.Carrier.Database hiding (Runtime)
-import Control.Carrier.Error.Either (runError)
-import Control.Carrier.Lift
-import Control.Monad.Except (throwError)
-import Servant.Server
+import Control.Carrier.Error.Either (ErrorC)
+import Control.Carrier.Lift (LiftC)
+import Control.Lens ((^.), _2)
+import qualified Control.Monad.Except as CME
+import Data.Aeson (ToJSON)
+import qualified Data.Aeson as Aeson
+import Servant.Server (Handler, ServerError)
+import qualified Servant.Server as Servant
 import Sthenauth.API.Log
 import Sthenauth.API.Middleware (Client)
-import Sthenauth.Core.Action
-import Sthenauth.Core.CurrentUser
-import Sthenauth.Core.Error hiding (throwError)
-import Sthenauth.Core.Remote
-import Sthenauth.Core.Runtime
-import Sthenauth.Core.Site as Site
-import Sthenauth.Crypto.Carrier hiding (Runtime)
+import Sthenauth.Core.Error (Sterr(..), UserError(..))
+import Sthenauth.Effect (setCurrentUser)
+import Sthenauth.Effect.Carrier (SthenauthC, Environment, runSthenauth)
+
+--------------------------------------------------------------------------------
+-- | A type of effect that can use Sthenauth and Throw.
+type Action = SthenauthC (ErrorC Sterr (LiftC Handler))
 
 --------------------------------------------------------------------------------
 -- | Execute a 'Sthenauth' action, producing a Servant @Handler@.
 runRequest
-  :: Runtime
+  :: forall a.
+  Environment
   -> Client
   -> Logger
-  -> Action Handler a
+  -> Action a
   -> Handler a
-runRequest env client l s = do
-  site <- findSiteFromRequest
-  cu <- findCurrentUser site
+runRequest env client log orig =
+  runSthenauth env (fst client) action
+    & runError
+    & runM
+    >>= either onError pure
+  where
+    action :: Action a
+    action = do
+      traverse_ setCurrentUser (client ^. _2)
+      orig
 
-  runAction env site (fst client) cu s >>= \case
-    Right (_, a) -> pure a
-    Left  e' -> do
-      liftIO (logger_error l (fst client) (show e' :: Text))
-      throwError (toServerError e')
+    onError :: Sterr -> Handler a
+    onError e = do
+      liftIO (logger_error log (fst client) (show e :: Text))
+      CME.throwError (toServerError e)
+
+--------------------------------------------------------------------------------
+toServerError :: Sterr -> ServerError
+toServerError = \case
+  ApplicationUserError e -> ue e
+  _ -> Servant.err500
 
   where
-    findSiteFromRequest :: Handler Site
-    findSiteFromRequest
-      = siteFromFQDN (client ^. _1.requestFqdn)
-      & runDatabase (rtDb env)
-      & runError
-      & runM
-      & (>>= either (throwError . toServerError) pure)
+    mkSE :: (ToJSON a) => a -> ServerError -> ServerError
+    mkSE a e = e { Servant.errBody = Aeson.encode a }
 
-    findCurrentUser :: Site -> Handler CurrentUser
-    findCurrentUser site =
-      case client ^. _2 of
-        Nothing -> pure notLoggedIn
-        Just session ->
-          currentUserFromSessionKey site (client ^. _1.requestTime) session
-          & runDatabase (rtDb env)
-          & runCrypto (rtCrypto env)
-          & runError
-          & runM
-          & (>>= either (\(_ :: BaseError) -> pure notLoggedIn) pure)
+    ue :: UserError -> ServerError
+    ue e =
+      case e of
+        MustAuthenticateError            -> mkSE e Servant.err401
+        WeakPasswordError _              -> mkSE e Servant.err400
+        MustChangePasswordError          -> mkSE e Servant.err400
+        AuthenticationFailedError _      -> mkSE e Servant.err401
+        UserInputError _                 -> mkSE e Servant.err400
+        InvalidUsernameOrEmailError      -> mkSE e Servant.err400
+        AccountAlreadyExistsError        -> mkSE e Servant.err400
+        OidcProviderAuthenticationFailed -> mkSE e Servant.err401
+        ValidationError _                -> mkSE e Servant.err400
+        NotFoundError                    -> mkSE e Servant.err404
+        PermissionDenied                 -> mkSE e Servant.err403

@@ -24,19 +24,17 @@ module Sthenauth.API.Handlers
 -- Imports:
 import qualified Control.Monad.Except as CME
 import Data.ByteString.Builder (toLazyByteString)
-import Data.List (lookup)
 import qualified OpenID.Connect.Client.Flow.AuthorizationCode as OIDC
 import Servant.API
 import Servant.Server
+import Sthenauth.API.Monad (Action)
 import Sthenauth.API.Routes
-import Sthenauth.Core.Action
 import Sthenauth.Core.AuthN
 import Sthenauth.Core.CurrentUser
-import Sthenauth.Core.Info
-import Sthenauth.Core.PostLogin
+import Sthenauth.Core.Error
 import qualified Sthenauth.Core.Public as Public
-import Sthenauth.Core.Site (siteId, oidcCookieName)
 import Sthenauth.Core.URL
+import Sthenauth.Effect hiding (SetCookie, OidcLogin)
 import qualified Web.Cookie as WC
 
 --------------------------------------------------------------------------------
@@ -46,100 +44,78 @@ data UI
 
 --------------------------------------------------------------------------------
 -- | Handlers for the @API@ type.
-app :: ServerT API (Action Handler)
-app = getKeys
- :<|> getCapabilities
- :<|> getSession
- :<|> localLogin
- :<|> globalLogout
- :<|> createLocalAccount
- :<|> oidcDispatch
+app :: ServerT API Action
+app = getCapabilitiesH
+ :<|> getSessionH
+ :<|> localLoginH
+ :<|> logoutH
+ :<|> createLocalAccountH
+ :<|> oidcDispatchH
 
 --------------------------------------------------------------------------------
-getKeys :: ServerT GetKeys (Action Handler)
-getKeys = do
-  site <- asks currentSite
-  getSitePublicKeys (siteId site)
+getCapabilitiesH :: ServerT GetCapabilities Action
+getCapabilitiesH = getCapabilities
 
 --------------------------------------------------------------------------------
-getCapabilities :: ServerT GetCapabilities (Action Handler)
-getCapabilities = do
-  site   <- asks currentSite
-  remote <- asks currentRemote
-  cfg    <- asks currentConfig
-  getSiteCapabilities cfg site remote
+getSessionH :: ServerT GetSession Action
+getSessionH =
+  getCurrentUser
+    <&> sessionFromCurrentUser
+    >>= maybe (throwUserError PermissionDenied)
+              (pure . Public.toSession)
 
 --------------------------------------------------------------------------------
-getSession :: ServerT GetSession (Action Handler)
-getSession = fmap sessionFromCurrentUser get >>= \case
-  Nothing -> lift (CME.throwError err401)
-  Just s  -> pure (Public.toSession s)
+localLoginH :: ServerT LocalLogin Action
+localLoginH = loginWithCredentials >=> responseAuthN JsonApp
 
 --------------------------------------------------------------------------------
-localLogin :: ServerT LocalLogin (Action Handler)
-localLogin = executeAuthN JsonApp . LoginWithLocalCredentials
+logoutH :: ServerT GlobalLogout Action
+logoutH = logout <&> (`addHeader` LoggedOut)
 
 --------------------------------------------------------------------------------
-globalLogout :: ServerT GlobalLogout (Action Handler)
-globalLogout = executeAuthN JsonApp Logout
+createLocalAccountH :: ServerT CreateLocalAccount Action
+createLocalAccountH = createAccount >=> responseAuthN JsonApp
 
 --------------------------------------------------------------------------------
-createLocalAccount :: ServerT CreateLocalAccount (Action Handler)
-createLocalAccount = executeAuthN JsonApp . CreateLocalAccountWithCredentials
+oidcDispatchH :: ServerT OidcAPI Action
+oidcDispatchH = oidcLoginH :<|> oidcReturnSuccH :<|> oidcReturnFailH
 
 --------------------------------------------------------------------------------
-oidcDispatch :: ServerT OidcAPI (Action Handler)
-oidcDispatch = oidcLogin
-          :<|> oidcReturnSucc
-          :<|> oidcReturnFail
+oidcLoginH :: ServerT OidcLogin Action
+oidcLoginH login = do
+  url <- getCurrentRemote <&> oidcRedirectURL
+  loginWithOidcProvider url login >>= responseAuthN JsonApp
 
 --------------------------------------------------------------------------------
-oidcLogin :: ServerT OidcLogin (Action Handler)
-oidcLogin login = do
-  url <- asks currentSite <&> oidcRedirectURL
-  executeAuthN JsonApp (LoginWithOidcProvider url login)
+oidcReturnSuccH :: ServerT OidcReturnSucc Action
+oidcReturnSuccH codeQp stateQp (Cookies cookies) = do
+  let user = OIDC.UserReturnFromRedirect
+        { afterRedirectCodeParam     = encodeUtf8 codeQp
+        , afterRedirectStateParam    = encodeUtf8 stateQp
+        , afterRedirectSessionCookie = cookies
+        }
+  url <- getCurrentRemote <&> oidcRedirectURL
+  finishLoginWithOidcProvider url user >>= responseAuthN BareBrowser
 
 --------------------------------------------------------------------------------
-oidcReturnSucc :: ServerT OidcReturnSucc (Action Handler)
-oidcReturnSucc codeQp stateQp (Cookies cookies) = do
-  site <- asks currentSite
-  let redir = oidcRedirectURL site
-
-  case lookup (encodeUtf8 $ oidcCookieName site) (WC.parseCookies cookies) of
-    Nothing -> pure (noHeader LoginFailed)
-    Just bs ->
-      executeAuthN BareBrowser $ FinishLoginWithOidcProvider redir $
-        OIDC.UserReturnFromRedirect
-          { afterRedirectCodeParam     = encodeUtf8 codeQp
-          , afterRedirectStateParam    = encodeUtf8 stateQp
-          , afterRedirectSessionCookie = bs
-          }
+oidcReturnFailH :: ServerT OidcReturnFail Action
+oidcReturnFailH errQp errdQp (Cookies cookies) = do
+  let oidc = IncomingOidcProviderError
+        { oidcSessionCookieValue    = cookies
+        , oidcErrorParam            = errQp
+        , oidcErrorDescriptionParam = errdQp
+        }
+  processFailedOidcProviderLogin oidc >>= responseAuthN BareBrowser
 
 --------------------------------------------------------------------------------
-oidcReturnFail :: ServerT OidcReturnFail (Action Handler)
-oidcReturnFail errQp errdQp (Cookies cookies) = do
-  site <- asks currentSite
-
-  case lookup (encodeUtf8 $ oidcCookieName site) (WC.parseCookies cookies) of
-    Nothing -> pure (noHeader LoginFailed)
-    Just bs ->
-      executeAuthN BareBrowser . ProcessFailedOidcProviderLogin $
-        IncomingOidcProviderError
-          { oidcSessionCookieValue    = bs
-          , oidcErrorParam            = errQp
-          , oidcErrorDescriptionParam = errdQp
-          }
-
---------------------------------------------------------------------------------
-executeAuthN :: UI -> RequestAuthN -> Action Handler (SetCookie ResponseAuthN)
-executeAuthN ui req = do
-    site <- asks currentSite
-    remote <- asks currentRemote
-    (mc, res) <- dischargeMonadRandom (requestAuthN site remote req)
-
-    case ui of
-      BareBrowser -> lift (simpleResponse mc res)
-      JsonApp     -> pure (addCookieHeader mc res)
+responseAuthN
+  :: UI
+  -> (Maybe WC.SetCookie, ResponseAuthN)
+  -> Action (SetCookie ResponseAuthN)
+responseAuthN ui (mc, res) =
+  case ui of
+    BareBrowser -> sendM (simpleResponse  mc res)
+    JsonApp     -> pure  (addCookieHeader mc res)
   where
     addCookieHeader :: Maybe WC.SetCookie -> a -> SetCookie a
     addCookieHeader Nothing = noHeader
@@ -160,6 +136,6 @@ simpleResponse cookie res =
     url :: ResponseAuthN -> ByteString
     url = \case
       LoginFailed -> "/" -- FIXME: find a better URL to send the user to.
-      LoggedIn PostLogin{postLoginUrl} -> urlToByteString postLoginUrl
+      LoggedIn -> "/"
       NextStep (RedirectTo url) -> urlToByteString url
       LoggedOut -> "/"

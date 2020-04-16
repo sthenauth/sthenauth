@@ -27,6 +27,7 @@ module Sthenauth.Core.URL
   , urlFromFQDN
   , urlFromURI
   , localhostTo
+  , urlScheme
   , urlDomain
   , urlPath
   ) where
@@ -72,6 +73,9 @@ class HasURL a where
 
 instance HasURL URL where
   url = id
+
+instance HasURL URI where
+  url = lens urlFromURI (const getURI)
 
 --------------------------------------------------------------------------------
 instance Aeson.ToJSON URL where
@@ -169,6 +173,18 @@ urlFromURI = URL
 -- the generated URL uses @localhost@ as the domain.
 localhostTo :: HasURL a => Text -> a -> a
 localhostTo host = urlDomain %~ \t -> bool t host (t == "localhost")
+
+--------------------------------------------------------------------------------
+-- | A lens over the schema of a URL.
+urlScheme :: HasURL a => Lens' a Text
+urlScheme = url . lens getter setter
+  where
+    getter :: URL -> Text
+    getter = getURI >>> URI.uriScheme >>> toText
+
+    setter :: URL -> Text -> URL
+    setter url scheme = URL $
+      (getURI url) { URI.uriScheme = toString scheme }
 
 --------------------------------------------------------------------------------
 -- | A lens over the domain name of a URL.

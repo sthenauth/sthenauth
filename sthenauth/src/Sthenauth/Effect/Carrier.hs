@@ -16,7 +16,7 @@ License: Apache-2.0
 -}
 module Sthenauth.Effect.Carrier
   ( SthenauthC
-  , Runtime
+  , Environment
   , initSthenauth
   , createInitialAdminAccount
   , runSthenauth
@@ -29,29 +29,33 @@ import Control.Carrier.Error.Either
 import Control.Carrier.Lift
 import Control.Carrier.Reader
 import Control.Carrier.State.Strict
-import Control.Lens ((^.))
+import Control.Lens ((^.), (%~), Lens', lens)
 import qualified Control.Monad.Crypto.Cryptonite as Crypto
 import Crypto.Random (MonadRandom(..))
+import Data.List (lookup)
 import Data.Time.Clock (getCurrentTime)
 import qualified Iolaus.Database.Query as Query
 import Sthenauth.Core.Account (AccountId, accountId)
 import qualified Sthenauth.Core.Admin as Admin
 import qualified Sthenauth.Core.AuthN as Auth
+import qualified Sthenauth.Core.Capabilities as Capabilities
 import Sthenauth.Core.Crypto (CryptoC, runCrypto)
 import qualified Sthenauth.Core.Crypto as Crypto
 import Sthenauth.Core.CurrentUser
 import Sthenauth.Core.Database (transaction, runQuery)
 import Sthenauth.Core.Error
 import Sthenauth.Core.HTTP
-import Sthenauth.Core.Policy (sessionCookieName)
+import Sthenauth.Core.Policy (Policy, sessionCookieName, oidcCookieName)
 import Sthenauth.Core.Remote (Remote)
 import Sthenauth.Core.Session (resetSessionCookie)
 import Sthenauth.Effect.Algebra
 import Sthenauth.Effect.Boot
 import Sthenauth.Effect.Runtime
 import Sthenauth.Providers.Local.Provider (Credentials(..), insertLocalAccountQuery)
+import Sthenauth.Providers.OIDC
 import qualified Sthenauth.Providers.OIDC.Provider as OIDC
 import Web.Cookie (SetCookie)
+import qualified Web.Cookie as WC
 
 --------------------------------------------------------------------------------
 newtype SthenauthC m a = SthenauthC
@@ -64,17 +68,27 @@ instance (MonadIO m, Algebra sig m) => Algebra (Sthenauth :+: sig) (SthenauthC m
     R other ->
       SthenauthC (alg (R (handleCoercible other)))
 
+    L (GetCapabilities k) -> do
+      rt <- SthenauthC ask
+      cu <- readIORef (rt ^. tstate.user)
+      unwrap (Capabilities.getCapabilities
+        (rt ^. env.config) (rt ^. env.policy)
+        (rt ^. tstate.remote) cu) >>= k
+
     L (GetCurrentUser k) -> do
       rt <- SthenauthC ask
-      liftIO (readIORef (rt ^. tstate.user)) >>= k
+      readIORef (rt ^. tstate.user) >>= k
 
     L (SetCurrentUser key k) -> do
       rt <- SthenauthC ask
       cu <- unwrap
         (currentUserFromSessionKey (rt ^. env.policy) (rt ^. currentTime) key)
         <&> fromRight notLoggedIn
-      liftIO (writeIORef (rt ^. tstate.user) cu)
+      writeIORef (rt ^. tstate.user) cu
       k cu
+
+    L (GetCurrentRemote k) ->
+      SthenauthC ask <&> (^. tstate.remote) >>= k
 
     L (CreateAccount creds k) ->
       runRequestAuthN (Auth.CreateLocalAccountWithCredentials creds) >>= k
@@ -85,11 +99,15 @@ instance (MonadIO m, Algebra sig m) => Algebra (Sthenauth :+: sig) (SthenauthC m
     L (LoginWithOidcProvider url login k) ->
       runRequestAuthN (Auth.LoginWithOidcProvider url login) >>= k
 
-    L (FinishLoginWithOidcProvider url user k) ->
-      runRequestAuthN (Auth.FinishLoginWithOidcProvider url user) >>= k
+    L (FinishLoginWithOidcProvider url user k) -> do
+      rt <- SthenauthC ask
+      let user' = updateCookie (rt ^. env.policy) user
+      runRequestAuthN (Auth.FinishLoginWithOidcProvider url user') >>= k
 
-    L (ProcessFailedOidcProviderLogin e k) ->
-      runRequestAuthN (Auth.ProcessFailedOidcProviderLogin e) >>= k
+    L (ProcessFailedOidcProviderLogin e k) -> do
+      rt <- SthenauthC ask
+      let e' = updateCookie (rt ^. env.policy) e
+      runRequestAuthN (Auth.ProcessFailedOidcProviderLogin e') >>= k
 
     L (Logout k) -> do
       rt <- SthenauthC ask
@@ -97,7 +115,7 @@ instance (MonadIO m, Algebra sig m) => Algebra (Sthenauth :+: sig) (SthenauthC m
         Right (Just c, _) -> k c
         _ -> do
           -- Ignore errors and force a logout:
-          liftIO (writeIORef (rt ^. tstate.user) notLoggedIn)
+          writeIORef (rt ^. tstate.user) notLoggedIn
           k $ resetSessionCookie (sessionCookieName (rt ^. env.policy))
 
     L (RegisterOidcProvider kp oi op k) ->
@@ -106,10 +124,33 @@ instance (MonadIO m, Algebra sig m) => Algebra (Sthenauth :+: sig) (SthenauthC m
     where
       requireAdmin k action = do
         rt <- SthenauthC ask
-        user <- liftIO (readIORef (rt ^. tstate.user))
+        user <- readIORef (rt ^. tstate.user)
         if isAdmin user
           then action >>= k
           else k (Left $ ApplicationUserError PermissionDenied)
+
+--------------------------------------------------------------------------------
+class HasCookieHeader a where
+  cookieHeader :: Lens' a ByteString
+
+instance HasCookieHeader UserReturnFromRedirect where
+  cookieHeader = lens afterRedirectSessionCookie
+    (\u b -> u { afterRedirectSessionCookie = b })
+
+instance HasCookieHeader IncomingOidcProviderError where
+  cookieHeader = lens oidcSessionCookieValue
+    (\i b -> i { oidcSessionCookieValue = b })
+
+--------------------------------------------------------------------------------
+-- | Parse the OIDC cookie from a HTTP @Cookie:@ header.
+updateCookie :: HasCookieHeader a => Policy -> a -> a
+updateCookie policy = cookieHeader %~ parse
+  where
+    parse :: ByteString -> ByteString
+    parse cookies =
+      let key = encodeUtf8 (oidcCookieName policy)
+          vals = WC.parseCookies cookies
+      in fromMaybe cookies (lookup key vals)
 
 --------------------------------------------------------------------------------
 runRequestAuthN

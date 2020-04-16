@@ -81,28 +81,3 @@ instance AsUserError Sterr where _UserError = _ApplicationUserError
 --------------------------------------------------------------------------------
 throwUserError :: Has (Throw Sterr) sig m => UserError -> m a
 throwUserError = throwError . ApplicationUserError
-
---------------------------------------------------------------------------------
--- toServerError :: BaseError -> ServerError
--- toServerError = \case
---   ApplicationUserError e -> ue e
---   _ -> Servant.err500
---
---   where
---     mkSE :: (ToJSON a) => a -> ServerError -> ServerError
---     mkSE a e = e { Servant.errBody = Aeson.encode a }
---
---     ue :: UserError -> ServerError
---     ue e =
---       case e of
---         MustAuthenticateError            -> mkSE e Servant.err401
---         WeakPasswordError _              -> mkSE e Servant.err400
---         MustChangePasswordError          -> mkSE e Servant.err400
---         AuthenticationFailedError _      -> mkSE e Servant.err401
---         UserInputError _                 -> mkSE e Servant.err400
---         InvalidUsernameOrEmailError      -> mkSE e Servant.err400
---         AccountAlreadyExistsError        -> mkSE e Servant.err400
---         OidcProviderAuthenticationFailed -> mkSE e Servant.err401
---         ValidationError _                -> mkSE e Servant.err400
---         NotFoundError                    -> mkSE e Servant.err404
---         PermissionDenied                 -> mkSE e Servant.err403

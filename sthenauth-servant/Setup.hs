@@ -14,13 +14,5 @@ Copyright:
 License: Apache-2.0
 
 -}
-module Sthenauth.API.Types
-  ( ResponseAuthN(..)
-  ) where
-
---------------------------------------------------------------------------------
-import Sthenauth.Core.PostLogin
-
---------------------------------------------------------------------------------
-data ResponseAuthN
-  = LoggedIn PostLogin
+import Distribution.Simple
+main = defaultMain

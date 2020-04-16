@@ -21,7 +21,9 @@ module Sthenauth.API.Log
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Control.Lens ((^.))
 import Control.Exception (bracket)
+import Data.Aeson (ToJSON)
 import qualified Data.Aeson as Aeson
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import qualified Data.UUID as UUID

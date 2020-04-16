@@ -24,7 +24,6 @@ import qualified Data.Vault.Lazy as Vault
 import qualified Network.Wai as Wai
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Network.Wai.Handler.WarpTLS as Warp
-import qualified Paths_sthenauth as Sthenauth
 import Servant.API
 import Servant.Server
 import Servant.Server.StaticFiles (serveDirectoryFileServer)
@@ -33,17 +32,18 @@ import Sthenauth.API.Log
 import Sthenauth.API.Middleware
 import Sthenauth.API.Monad
 import Sthenauth.API.Routes
+import Sthenauth.CertAuth.Carrier (CertAuthEnv)
 import Sthenauth.CertAuth.TLS (serverSettingsForTLS)
-import Sthenauth.Core.Runtime
+import Sthenauth.Effect.Carrier (Environment)
 
 --------------------------------------------------------------------------------
 -- | A server for the 'Sthenauth' API.
-apiServer :: Runtime -> Client -> Logger -> Server API
+apiServer :: Environment -> Client -> Logger -> Server API
 apiServer env client logger = hoistServer api (runRequest env client logger) app
 
 --------------------------------------------------------------------------------
 -- | A server for the final API.
-server :: Runtime -> Vault.Key Client -> Logger -> FilePath -> Server FinalAPI
+server :: Environment -> Vault.Key Client -> Logger -> FilePath -> Server FinalAPI
 server env key logger path vault =
   case Vault.lookup key vault of
     Nothing     -> error "shouldn't happen"
@@ -56,13 +56,12 @@ server env key logger path vault =
 
 --------------------------------------------------------------------------------
 -- | Run the actual web server.
-main :: Runtime -> IO ()
-main env = do
-  path <- Sthenauth.getDataDir
+main :: Environment -> CertAuthEnv -> FilePath -> IO ()
+main env certauth path = do
   rkey <- Vault.newKey
 
   withLogger (fmap fst . Vault.lookup rkey . Wai.vault) $ \logger -> do
     let settings = Warp.defaultSettings & Warp.setPort 3001
-        server'  = serve finalapi (server env rkey logger (path </> "www"))
-    tls <- serverSettingsForTLS env
+        server'  = serve finalapi (server env rkey logger path)
+    tls <- serverSettingsForTLS certauth
     Warp.runTLS tls settings (middleware rkey logger server')

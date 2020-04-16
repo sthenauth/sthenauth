@@ -16,8 +16,10 @@ License: Apache-2.0
 -}
 module Sthenauth.Effect
   ( Sthenauth
+  , getCapabilities
   , getCurrentUser
   , setCurrentUser
+  , getCurrentRemote
   , createAccountEither
   , createAccount
   , loginWithCredentialsEither
@@ -35,6 +37,7 @@ module Sthenauth.Effect
 
     -- * Re-exports
   , module Sthenauth.Core.AuthN
+  , module Sthenauth.Core.Capabilities
   , module Sthenauth.Core.CurrentUser
   , module Sthenauth.Core.Session
   , module Sthenauth.Core.URL
@@ -52,6 +55,7 @@ import Web.Cookie (SetCookie)
 
 import Sthenauth.Effect.Algebra
 import Sthenauth.Providers.OIDC
+import Sthenauth.Core.Capabilities (Capabilities(..))
 
 import Sthenauth.Core.URL
   (URL, getURI, textToURL, strToURL, urlFromFQDN, urlFromURI)
