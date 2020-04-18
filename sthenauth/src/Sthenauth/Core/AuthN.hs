@@ -44,8 +44,9 @@ import Sthenauth.Core.Policy
 import Sthenauth.Core.Provider (ProviderType(..))
 import Sthenauth.Core.Remote
 import Sthenauth.Core.Session
+import Sthenauth.Core.Site (SiteF(..), Site)
 import Sthenauth.Core.URL
-import qualified Sthenauth.Providers.Local.Provider as Local
+import qualified Sthenauth.Providers.Local as Local
 import qualified Sthenauth.Providers.OIDC.AuthN as OIDC
 import Sthenauth.Providers.Types
 import Web.Cookie
@@ -84,24 +85,25 @@ requestAuthN
      , Has (State CurrentUser) sig m
      , MonadRandom                 m
      )
-  => Policy
+  => Site
   -> Remote
   -> RequestAuthN
   -> m (Maybe SetCookie, ResponseAuthN)
-requestAuthN policy remote req = do
-  void (logout policy remote)
+requestAuthN site remote req = do
+  void (logout site remote)
+  let policy = sitePolicy site
 
-  dispatchRequest policy remote req >>= \case
+  dispatchRequest site remote req >>= \case
     ProcessAdditionalStep step mcookie ->
       pure (mcookie, NextStep step)
 
     SuccessfulAuthN account status -> do
       -- Fire events
-      (sess, key) <- issueSession policy remote account
+      (sess, key) <- issueSession site remote account
       user <- currentUserFromSession policy (remote ^. requestTime) account sess
       put user
 
-      fireEvents user remote $ catMaybes
+      fireEvents (siteId site) user remote $ catMaybes
         [ case status of
             ExistingAccount -> Nothing
             NewAccount -> Just . EventAccountCreated . getKey . accountId $ account
@@ -118,7 +120,7 @@ requestAuthN policy remote req = do
 
     FailedAuthN ue detail -> do
       user <- get
-      fireEvents user remote [detail]
+      fireEvents (siteId site) user remote [detail]
       throwUserError ue
 
 --------------------------------------------------------------------------------
@@ -128,24 +130,25 @@ logout
      , Has (Throw Sterr)       sig m
      , Has (State CurrentUser) sig m
      )
-  => Policy
+  => Site
   -> Remote
   -> m SetCookie
-logout policy remote = do
+logout site remote = do
   user <- get
   case sessionFromCurrentUser user of
     Nothing -> pure reset
     Just session -> do
       -- FIXME: give the provider a chance to clean up session
       -- details then delete the session object.
-      fireEvents user remote [EventLogout . getKey $ sessionAccountId session]
+      fireEvents (siteId site) user remote
+        [EventLogout . getKey $ sessionAccountId session]
       runQuery (deleteSession (sessionId session))
 
       put notLoggedIn
       pure reset
   where
     reset :: SetCookie
-    reset = resetSessionCookie (sessionCookieName policy)
+    reset = resetSessionCookie (sessionCookieName $ sitePolicy site)
 
 --------------------------------------------------------------------------------
 dispatchRequest
@@ -157,48 +160,48 @@ dispatchRequest
      , Has (State CurrentUser) sig m
      , MonadRandom                 m
      )
-  => Policy
+  => Site
   -> Remote
   -> RequestAuthN
   -> m ProviderResponse
-dispatchRequest policy remote = \case
+dispatchRequest site remote = \case
   LoginWithLocalCredentials creds -> do
-    assertPolicyRules policy
+    assertPolicyRules (sitePolicy site)
       [ policyAllowsProviderType LocalProvider
       , policyAllowsLocalAccountLogin
       ]
-    catchError (Local.authenticate policy (remote ^. requestTime) creds)
+    catchError (Local.authenticate site (remote ^. requestTime) creds)
                (onLocalError creds)
 
   CreateLocalAccountWithCredentials creds -> do
-    assertPolicyRules policy
+    assertPolicyRules (sitePolicy site)
       [ policyAllowsProviderType LocalProvider
       , policyAllowsLocalAccountCreation
       ]
-    catchError (Local.createNewLocalAccount policy (remote ^. requestTime) creds)
+    catchError (Local.createNewLocalAccount site (remote ^. requestTime) creds)
                (onLocalError creds)
 
   LoginWithOidcProvider url login -> do
-    assertPolicyRules policy
+    assertPolicyRules (sitePolicy site)
       [ policyAllowsProviderType OidcProvider
       ]
     catchError
-      (OIDC.requestOIDC remote policy (OIDC.LoginWithOidcProvider url login))
+      (OIDC.requestOIDC site remote (OIDC.LoginWithOidcProvider url login))
       (onOidcError (show login))
 
   FinishLoginWithOidcProvider url browser -> do
-    assertPolicyRules policy
+    assertPolicyRules (sitePolicy site)
       [ policyAllowsProviderType OidcProvider
       ]
     catchError
-      (OIDC.requestOIDC remote policy (OIDC.SuccessfulReturnFromProvider url browser))
+      (OIDC.requestOIDC site remote (OIDC.SuccessfulReturnFromProvider url browser))
       (onOidcError "unavailable: browser return from OIDC provider authN")
 
   ProcessFailedOidcProviderLogin failure ->
-    OIDC.requestOIDC remote policy (OIDC.FailedReturnFromProvider failure)
+    OIDC.requestOIDC site remote (OIDC.FailedReturnFromProvider failure)
 
   Logout -> do
-    cookie <- logout policy remote
+    cookie <- logout site remote
     pure (SuccessfulLogout (Just cookie))
 
   where

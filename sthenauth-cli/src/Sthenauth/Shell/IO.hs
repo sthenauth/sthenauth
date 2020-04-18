@@ -15,20 +15,27 @@ License: Apache-2.0
 
 -}
 module Sthenauth.Shell.IO
-  ( shellIO
+  ( dieOnSigTerm
+  , shellIO
   ) where
 
 --------------------------------------------------------------------------------
 -- Imports:
-import Control.Exception.Safe (try)
+import Control.Concurrent (myThreadId)
+import Control.Exception.Safe (try, throwTo)
 import Sthenauth.Core.Error
+import System.Exit (ExitCode(..))
+import System.Signal
+
+--------------------------------------------------------------------------------
+-- | Ensure the main thread is killed when receiving SIGTERM, similar
+-- to how SIGINT works.
+dieOnSigTerm :: IO ()
+dieOnSigTerm = do
+  tid <- myThreadId
+  installHandler sigTERM (const $ throwTo tid ExitSuccess)
 
 --------------------------------------------------------------------------------
 -- | Run an IO action, catching synchronous exceptions.
-shellIO :: (MonadIO m, Has Error sig m) => IO a -> m a
-shellIO action = do
-  result <- liftIO (try action)
-
-  case result of
-    Left e  -> throwError (ShellException e)
-    Right a -> pure a
+shellIO :: (MonadIO m, Has (Throw Sterr) sig m) => IO a -> m a
+shellIO = liftIO . try >=> either (throwError . ShellException) pure

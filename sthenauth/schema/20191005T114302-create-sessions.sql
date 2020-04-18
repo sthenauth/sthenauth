@@ -1,5 +1,6 @@
 CREATE TABLE sessions (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v1mc(),
+  site_id     UUID NOT NULL REFERENCES sites ON DELETE CASCADE,
   account_id  UUID NOT NULL REFERENCES accounts ON DELETE CASCADE,
   remote      JSONB NOT NULL,
   session_key BYTEA NOT NULL,
@@ -9,8 +10,8 @@ CREATE TABLE sessions (
   updated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp
 );
 
-CREATE UNIQUE INDEX ON sessions (session_key);
-CREATE INDEX ON sessions (account_id);
+CREATE UNIQUE INDEX ON sessions (site_id, session_key);
+CREATE INDEX ON sessions (site_id, account_id);
 
 CREATE TRIGGER trigger_sessions_updated_at
   BEFORE UPDATE ON sessions

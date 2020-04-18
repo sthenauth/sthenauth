@@ -48,6 +48,7 @@ import Sthenauth.Core.Error
 import Sthenauth.Core.Policy
 import Sthenauth.Core.Remote
 import Sthenauth.Core.Session
+import Sthenauth.Core.Site (Site, siteId, sitePolicy)
 import Web.Cookie
 
 --------------------------------------------------------------------------------
@@ -79,14 +80,14 @@ currentUserFromHeaders
      , Has Crypto        sig m
      , Has (Throw Sterr) sig m
      )
-  => Policy
+  => Site
   -> RequestTime
   -> HTTP.RequestHeaders
   -> m CurrentUser
-currentUserFromHeaders policy rtime hs =
+currentUserFromHeaders site rtime hs =
   case sessionKeyFromHeaders hs of
     Nothing  -> return NotLoggedIn
-    Just sid -> currentUserFromSessionKey policy rtime sid
+    Just sid -> currentUserFromSessionKey site rtime sid
 
 --------------------------------------------------------------------------------
 -- | Create a 'CurrentUser' from the given 'SessionId'.
@@ -95,22 +96,22 @@ currentUserFromSessionKey
      , Has Crypto        sig m
      , Has (Throw Sterr) sig m
      )
-  => Policy
+  => Site
   -> RequestTime
   -> ClearSessionKey
   -> m CurrentUser
-currentUserFromSessionKey policy rtime clear = do
+currentUserFromSessionKey site rtime clear = do
     key <- toSessionKey clear
     user <- runQuery (select1 $ query key) >>= \case
       Nothing -> return NotLoggedIn
       Just (s, a, t) -> pure (unsafeMkCU s a t)
-    user <$ recordUserActivity policy rtime user
+    user <$ recordUserActivity (sitePolicy site) rtime user
   where
     query
       :: SessionKey
       -> Select (SessionF SqlRead, AccountF SqlRead, AdminF ForceNullable)
     query key = proc () -> do
-      (t1, t2) <- findSessionAccount key -< ()
+      (t1, t2) <- findSessionAccount (siteId site) key -< ()
       t3 <- accountsAdminJoin -< t2
       returnA -< (t1, t2, t3)
 

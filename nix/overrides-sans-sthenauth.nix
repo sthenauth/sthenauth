@@ -15,6 +15,11 @@ rec {
      iolaus-opaleye
      iolaus-validation;
 
+  byline = lib.fetchGit {
+    url = "https://code.devalot.com/open/byline.git";
+    rev = "486d8177b36288c6c607e5dcc34aae940b9ab031";
+  };
+
   zxcvbn-hs = lib.fetchGit {
     url = "https://code.devalot.com/sthenauth/zxcvbn-hs.git";
     rev = "7c05b0c91b4b7f98777cf83ba5b24cdc1d62bfcd";

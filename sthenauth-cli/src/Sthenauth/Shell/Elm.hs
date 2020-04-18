@@ -32,7 +32,6 @@ import qualified Options.Applicative as OA
 import Sthenauth.Core.AuthN (ResponseAuthN)
 import Sthenauth.Core.Capabilities (Capabilities)
 import Sthenauth.Core.Policy (Authenticator)
-import Sthenauth.Core.PostLogin (PostLogin)
 import Sthenauth.Core.Public (Session)
 import Sthenauth.Providers.Local.Login (Credentials)
 import Sthenauth.Providers.OIDC.AuthN (OidcLogin)
@@ -73,7 +72,6 @@ main Options{..} = do
         , Elm.jsonDefinitions @Credentials
         , Elm.jsonDefinitions @OIDC.Public
         , Elm.jsonDefinitions @OidcLogin
-        , Elm.jsonDefinitions @PostLogin
         , Elm.jsonDefinitions @ResponseAuthN
         , Elm.jsonDefinitions @Session
         ]

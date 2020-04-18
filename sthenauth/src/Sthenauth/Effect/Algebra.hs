@@ -34,19 +34,28 @@ module Sthenauth.Effect.Algebra
   , logout
   , registerOidcProviderEither
   , registerOidcProvider
+  , modifySiteEither
+  , modifySite
+  , modifySitePolicyEither
+  , modifySitePolicy
+  , alterAccountAdminStatusEither
+  , alterAccountAdminStatus
   ) where
 
 --------------------------------------------------------------------------------
 import Control.Algebra
 import GHC.Generics (Generic1)
+import Sthenauth.Core.Admin (AlterAdmin)
 import Sthenauth.Core.AuthN (ResponseAuthN)
 import Sthenauth.Core.Capabilities (Capabilities)
 import Sthenauth.Core.CurrentUser (CurrentUser)
 import Sthenauth.Core.Error (Sterr)
+import Sthenauth.Core.Policy (Policy)
 import Sthenauth.Core.Remote (Remote)
 import Sthenauth.Core.Session (ClearSessionKey)
+import Sthenauth.Core.Site (Site)
 import Sthenauth.Core.URL (URL)
-import Sthenauth.Providers.Local.Provider (Credentials)
+import Sthenauth.Providers.Local (Login, Credentials)
 import Sthenauth.Providers.OIDC
 import Web.Cookie (SetCookie)
 
@@ -71,6 +80,19 @@ data Sthenauth m k
       OidcClientId
       OidcClientPassword
       (Either Sterr OidcProvider -> m k)
+
+  | ModifySite
+      (Site -> Site)
+      (Either Sterr () -> m k)
+
+  | ModifySitePolicy
+      (Policy -> Policy)
+      (Either Sterr () -> m k)
+
+  | AlterAccountAdminStatus
+      Login
+      AlterAdmin
+      (Either Sterr () -> m k)
   deriving stock (Generic1, Functor)
   deriving anyclass (HFunctor, Effect)
 
@@ -256,4 +278,79 @@ registerOidcProvider
   -> m OidcProvider                -- ^ New provider record.
 registerOidcProvider k o =
   registerOidcProviderEither k o
+    >=> either throwError pure
+
+--------------------------------------------------------------------------------
+-- | Use a pure function to modify the current site.
+--
+-- @since 0.1.0.0
+modifySiteEither
+  :: Has Sthenauth sig m
+  => (Site -> Site)
+  -> m (Either Sterr ())
+modifySiteEither = send . (`ModifySite` pure)
+
+--------------------------------------------------------------------------------
+-- | Use a pure function to modify the current site.
+--
+-- @since 0.1.0.0
+modifySite
+  :: ( Has Sthenauth     sig m
+     , Has (Throw Sterr) sig m
+     )
+  => (Site -> Site)
+  -> m ()
+modifySite =
+  modifySiteEither
+    >=> either throwError pure
+
+
+
+--------------------------------------------------------------------------------
+-- | Use a pure function to modify the current site's policy.
+--
+-- @since 0.1.0.0
+modifySitePolicyEither
+  :: Has Sthenauth sig m
+  => (Policy -> Policy)
+  -> m (Either Sterr ())
+modifySitePolicyEither = send . (`ModifySitePolicy` pure)
+
+--------------------------------------------------------------------------------
+-- | Use a pure function to modify the current site's policy.
+--
+-- @since 0.1.0.0
+modifySitePolicy
+  :: (Has Sthenauth sig m, Has (Throw Sterr) sig m)
+  => (Policy -> Policy)
+  -> m ()
+modifySitePolicy =
+  modifySitePolicyEither
+    >=> either throwError pure
+
+--------------------------------------------------------------------------------
+-- | Promote or demote another account's admin status.
+--
+-- @since 0.1.0.0
+alterAccountAdminStatusEither
+  :: Has Sthenauth sig m
+  => Login
+  -> AlterAdmin
+  -> m (Either Sterr ())
+alterAccountAdminStatusEither lg aa =
+  send (AlterAccountAdminStatus lg aa pure)
+
+--------------------------------------------------------------------------------
+-- | Promote or demote another account's admin status.
+--
+-- @since 0.1.0.0
+alterAccountAdminStatus
+  :: ( Has Sthenauth sig m
+     , Has (Throw Sterr) sig m
+     )
+  => Login
+  -> AlterAdmin
+  -> m ()
+alterAccountAdminStatus lg =
+  alterAccountAdminStatusEither lg
     >=> either throwError pure

@@ -51,6 +51,7 @@ import qualified OpenID.Connect.TokenResponse as TR
 import Sthenauth.Core.Account
 import Sthenauth.Core.Crypto
 import Sthenauth.Core.Email
+import Sthenauth.Core.Site (SiteId)
 import Sthenauth.Providers.OIDC.Provider
 import Sthenauth.Providers.OIDC.Token
 
@@ -62,6 +63,9 @@ type ForeignAccountId = Text
 data OidcAccountF f = OidcAccount
   { oidcAccountId :: Col f "account_id" AccountId SqlUuid ForeignKey
     -- ^ Key into the accounts table.
+
+  , oidcSiteId :: Col f "site_id" SiteId SqlUuid ForeignKey
+    -- ^ Mostly for convenience.
 
   , accountProviderId :: Col f "provider_id" ProviderId SqlUuid ForeignKey
     -- ^ The provider who owns this account.
@@ -109,7 +113,7 @@ fromOidcAccounts = selectTable accounts_openidconnect
 --------------------------------------------------------------------------------
 -- | Create a new OIDC account record via an insert statement.
 --
--- Returns two possible functions, both need an account ID in order to
+-- Returns two possible functions, both need an account in order to
 -- return an insert statement.  The first insert statement is to
 -- create the OIDC account.  The second is to create an email address
 -- from the claim set.
@@ -119,18 +123,19 @@ fromOidcAccounts = selectTable accounts_openidconnect
 -- second slot will always be Nothing.
 newOidcAccount
   :: forall sig m. Has Crypto sig m
-  => ProviderId                 -- ^ The provider this account belongs to.
+  => SiteId                     -- ^ The site ID.
+  -> ProviderId                 -- ^ The provider this account belongs to.
   -> UTCTime                    -- ^ The current time.
   -> TokenResponse ClaimsSet    -- ^ The response from the token end-point.
   -> m ( Maybe (AccountId -> Insert Int64)
        , Maybe (AccountId -> Insert Int64)
        ) -- ^ Insert statements.
-newOidcAccount pid time token =
+newOidcAccount sid pid time token =
   case claimsToForeignAccountId (TR.idToken token) of
     Nothing  -> pure (Nothing, Nothing)
     Just sub -> do
-      acctf <- fromTokenAndSubject pid time token sub
-      emailf <- emailInsertFromClaims (TR.idToken token)
+      acctf <- fromTokenAndSubject sid pid time token sub
+      emailf <- emailInsertFromClaims sid (TR.idToken token)
       pure (Just (toInsert . acctf), emailf)
   where
     toInsert :: OidcAccountF SqlWrite -> Insert Int64
@@ -140,12 +145,13 @@ newOidcAccount pid time token =
 -- | Create an account from a token and extracted subject.
 fromTokenAndSubject
   :: Has Crypto sig m
-  => ProviderId                 -- ^ The provider this account belongs to.
+  => SiteId
+  -> ProviderId                 -- ^ The provider this account belongs to.
   -> UTCTime                    -- ^ The current time.
   -> TokenResponse ClaimsSet    -- ^ The response from the token end-point.
   -> ForeignAccountId           -- ^ The subject extracted from the claim set.
   -> m (AccountId -> OidcAccountF SqlWrite)
-fromTokenAndSubject pid time token sub = do
+fromTokenAndSubject sid pid time token sub = do
   let aexp = addUTCTime (fromIntegral (fromMaybe 3600 (TR.expiresIn token))) time
       iexp = maybe aexp coerce (TR.idToken token ^. JWT.claimExp)
       scope = maybe "none" scopeFromWords (TR.scope token)
@@ -155,6 +161,7 @@ fromTokenAndSubject pid time token sub = do
   pure $ \aid ->
     OidcAccount
       { oidcAccountId        = toFields aid
+      , oidcSiteId           = toFields sid
       , accountProviderId    = toFields pid
       , foreignAccountId     = toFields sub
       , oauthAccessToken     = toFields accesst
@@ -171,13 +178,15 @@ fromTokenAndSubject pid time token sub = do
 --------------------------------------------------------------------------------
 -- | A @WHERE@ clause using the primary key.
 accountsPrimaryKey
-  :: ProviderId
+  :: SiteId
+  -> ProviderId
   -> ForeignAccountId
   -> OidcAccountF SqlRead
   -> O.Field O.SqlBool
-accountsPrimaryKey pid aid acct =
+accountsPrimaryKey sid pid aid acct =
   foreignAccountId acct  .== toFields aid .&&
-  accountProviderId acct .== toFields pid
+  accountProviderId acct .== toFields pid .&&
+  oidcSiteId acct        .== toFields sid
 
 --------------------------------------------------------------------------------
 -- | Update stored token information in the given account.
@@ -190,8 +199,8 @@ updateAccountFromToken
 updateAccountFromToken acct time token = do
     let pid = accountProviderId acct
         sub = foreignAccountId acct
-    new <- fromTokenAndSubject pid time token sub
-    email <- emailInsertFromClaims (TR.idToken token)
+    new <- fromTokenAndSubject (oidcSiteId acct) pid time token sub
+    email <- emailInsertFromClaims (oidcSiteId acct) (TR.idToken token)
     pure ( toUpdate . keepOptionalColumns $ new (oidcAccountId acct)
          , email <*> pure (oidcAccountId acct)
          )
@@ -208,7 +217,7 @@ updateAccountFromToken acct time token = do
         { uTable = accounts_openidconnect
         , uUpdateWith = const x
         , uWhere = accountsPrimaryKey
-            (accountProviderId acct) (foreignAccountId acct)
+            (oidcSiteId acct) (accountProviderId acct) (foreignAccountId acct)
         , uReturning = rCount
         }
 
@@ -221,33 +230,36 @@ claimsToForeignAccountId = fmap (view (re JWT.stringOrUri)) .  view JWT.claimSub
 -- | If you know the 'ForeignAccountId' for an account, this function
 -- will generate a select statement to find it.
 selectProviderAccountBySubject
-  :: ProviderId
+  :: SiteId
+  -> ProviderId
   -> ForeignAccountId
   -> Select (OidcAccountF SqlRead)
-selectProviderAccountBySubject pid aid = proc () -> do
+selectProviderAccountBySubject sid pid aid = proc () -> do
   t <- fromOidcAccounts -< ()
-  O.restrict -< accountsPrimaryKey pid aid t
+  O.restrict -< accountsPrimaryKey sid pid aid t
   returnA -< t
 
 --------------------------------------------------------------------------------
 -- | Find an account given by the subject of a claims set.
 selectProviderAccountByClaims
-  :: ProviderId
+  :: SiteId
+  -> ProviderId
   -> ClaimsSet
   -> Maybe (Select (OidcAccountF SqlRead))
-selectProviderAccountByClaims pid claims = do
+selectProviderAccountByClaims sid pid claims = do
   sub <- claimsToForeignAccountId claims
-  pure (selectProviderAccountBySubject pid sub)
+  pure (selectProviderAccountBySubject sid pid sub)
 
 --------------------------------------------------------------------------------
 -- | A query that can find an end-users OIDC account and main
 -- Sthenauth account.
 selectAccountsByClaims
-  :: ProviderId
+  :: SiteId
+  -> ProviderId
   -> ClaimsSet
   -> Maybe (Select (AccountF SqlRead, OidcAccountF SqlRead))
-selectAccountsByClaims pid claims =
-    selectProviderAccountByClaims pid claims <&> query
+selectAccountsByClaims sid pid claims =
+    selectProviderAccountByClaims sid pid claims <&> query
   where
     query
       :: Select (OidcAccountF SqlRead)
@@ -263,14 +275,15 @@ selectAccountsByClaims pid claims =
 -- from the claim set.
 emailInsertFromClaims
   :: Has Crypto sig m
-  => ClaimsSet
+  => SiteId
+  -> ClaimsSet
   -> m (Maybe (AccountId -> Insert Int64))
-emailInsertFromClaims claims =
+emailInsertFromClaims sid claims =
   traverse (\(e,v) -> (,v) <$> toSafeEmail e)
     (extractEmailAddressFromClaims claims) >>= \case
       Nothing -> pure Nothing
       Just (se, ev) -> pure . Just $ \aid ->
-        newAccountEmail se (bool Nothing claimTime ev) aid
+        newAccountEmail se (bool Nothing claimTime ev) aid sid
   where
     claimTime :: Maybe UTCTime
     claimTime = claims ^. JWT.claimIat <&> coerce

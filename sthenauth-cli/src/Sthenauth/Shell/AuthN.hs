@@ -20,61 +20,38 @@ module Sthenauth.Shell.AuthN
 
 --------------------------------------------------------------------------------
 -- Imports:
-import Sthenauth.Core.Action (MonadByline(..))
-import qualified Sthenauth.Core.AuthN as A
-import Sthenauth.Core.CurrentUser
+import Sthenauth.Effect
 import Sthenauth.Core.Email
 import Sthenauth.Core.Error
-import Sthenauth.Core.HTTP
-import Sthenauth.Core.Remote (Remote, requestTime)
 import Sthenauth.Core.Session (ClearSessionKey(..))
-import Sthenauth.Core.Site as Site
-import Sthenauth.Crypto.Effect
-import Sthenauth.Database.Effect
-import Sthenauth.Providers.Local.Login
+import Sthenauth.Shell.Byline
 import Sthenauth.Shell.Helpers
-import Sthenauth.Shell.Options as Options
+import Sthenauth.Shell.Options
 import System.Console.Byline
-import Web.Cookie (setCookieValue)
 
 --------------------------------------------------------------------------------
+-- | Authenticate the current user.
 authenticate
   :: forall sig m a.
      ( MonadIO m
-     , MonadByline m
-     , Has Database sig m
-     , Has Crypto sig m
-     , Has HTTP sig m
-     , Has (State CurrentUser) sig m
-     , Has Error sig m
-     , MonadRandom m
+     , Has LiftByline    sig m
+     , Has Sthenauth     sig m
+     , Has (Throw Sterr) sig m
      )
   => Options a
-  -> Site
-  -> Remote
-  -> m CurrentUser
-authenticate opts site remote =
-  case Options.session opts of
-    Just key -> do
-      user <- currentUserFromSessionKey site (remote ^. requestTime) (coerce key)
-      put user
-      pure user
-    Nothing  -> do
-      _ <- login ((,) <$> Options.email opts <*> Options.password opts)
+  -> m ()
+authenticate opts =
+  case optionsSession opts of
+    Just key -> setCurrentUser (coerce key) $> ()
+    Nothing  ->
+      login ((,) <$> optionsEmail opts <*> optionsPassword opts)
       -- FIXME: Save an encrypted session key in ~/ and reload as necessary
-      get
 
   where
-    auth :: Text -> Text -> m ClearSessionKey
-    auth n p = A.requestAuthN site remote
-      (A.LoginWithLocalCredentials (Credentials n p)) >>= \case
-        (Just c, A.LoggedIn _) -> pure (ClearSessionKey $ decodeUtf8 $ setCookieValue c)
-        _ -> throwUserError (AuthenticationFailedError Nothing)
-
-    login :: Maybe (Text, Text) -> m ClearSessionKey
-    login (Just (e, p)) = auth e p
+    login :: Maybe (Text, Text) -> m ()
+    login (Just (e, p)) = loginWithCredentials (Credentials e p) $> ()
     login Nothing       = do
       liftByline (sayLn ("Please authenticate..." <> fg green))
-      e <- getEmail <$> maybeAskEmail (Options.email opts)
-      p <- maybeAskPassword (Options.password opts)
-      auth e p
+      e <- getEmail <$> maybeAskEmail (optionsEmail opts)
+      p <- maybeAskPassword (optionsPassword opts)
+      loginWithCredentials (Credentials e p) $> ()

@@ -25,12 +25,14 @@ module Sthenauth.Core.Config
   , enabledAuthenticators
   , initializeMissingData
   , runDatabaseMigrations
+  , databaseConfig
   ) where
 
 --------------------------------------------------------------------------------
 -- Imports:
 import Control.Lens.TH (makeLenses)
 import qualified Data.List.NonEmpty as NonEmpty
+import Iolaus.Database.Config (DbConfig)
 import Sthenauth.Core.Encoding
 import Sthenauth.Core.Policy
 import System.FilePath ((</>))
@@ -67,6 +69,9 @@ data Config = Config
     --
     -- You probably want this option to always be turned on, but like
     -- '_initializeMissingData', only for a single process.
+
+  , _databaseConfig :: Maybe DbConfig
+    -- ^ Optional database configuration.
   }
   deriving (Generic)
   deriving (ToJSON, FromJSON) via GenericJSON Config
@@ -82,6 +87,7 @@ defaultConfig baseDirectory = Config
   , _systemSaltLabels = "Initial System Salt" :| []
   , _initializeMissingData = True
   , _runDatabaseMigrations = True
+  , _databaseConfig = Nothing
   }
 
 --------------------------------------------------------------------------------

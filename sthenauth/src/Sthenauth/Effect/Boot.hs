@@ -16,6 +16,7 @@ License: Apache-2.0
 -}
 module Sthenauth.Effect.Boot
   ( initSthenauth
+  , siteFromRemote
   ) where
 
 --------------------------------------------------------------------------------
@@ -24,13 +25,15 @@ import Control.Carrier.Database (Database, runDatabase)
 import qualified Control.Carrier.Database as DB
 import Control.Lens ((^.))
 import Control.Monad.Crypto.Cryptonite (KeyManager, initCryptoniteT, fileManager)
-import Iolaus.Database.Config (DbConfig)
+import Iolaus.Database.Query
 import qualified Paths_sthenauth as Sthenauth
 import Sthenauth.Core.Config
 import qualified Sthenauth.Core.Crypto as Crypto
+import Sthenauth.Core.Database (runQuery)
 import Sthenauth.Core.Error
 import Sthenauth.Core.HTTP
-import Sthenauth.Core.Policy
+import Sthenauth.Core.Remote
+import Sthenauth.Core.Site
 import Sthenauth.Effect.Runtime
 import System.Directory
 import System.FilePath
@@ -40,20 +43,18 @@ import qualified System.Metrics as Metrics
 initSthenauth
   :: MonadIO m
   => Config
-  -> Policy
-  -> Either DB.Runtime DbConfig
+  -> Maybe DB.Runtime
   -> Maybe KeyManager
   -> Maybe Metrics.Store
   -> m (Either Sterr Environment)
-initSthenauth cfg policy db kmgr mstore = do
+initSthenauth cfg db kmgr mstore = do
   datadir <- liftIO Sthenauth.getDataDir
 
   runM . runError $
     Environment
-      <$> initDatabase datadir cfg mstore db
+      <$> initDatabase datadir cfg db mstore
       <*> initCrypto cfg kmgr
       <*> initHTTP
-      <*> pure policy
       <*> pure cfg
 
 --------------------------------------------------------------------------------
@@ -85,18 +86,19 @@ initDatabase
   :: (MonadIO m, Has (Throw Sterr) sig m)
   => FilePath
   -> Config
+  -> Maybe DB.Runtime
   -> Maybe Metrics.Store
-  -> Either DB.Runtime DbConfig
   -> m DB.Runtime
-initDatabase datadir cfg mstore = \case
-  Left rt -> go rt
-  Right c -> do
-    rt <- DB.initRuntime c mstore
-    go rt
-
+initDatabase datadir cfg db mstore = do
+    dbrt <- connect
+    runDatabase dbrt createOrMigrate $> dbrt
   where
-    -- go :: DB.Runtime -> m DB.Runtime
-    go rt = runDatabase rt createOrMigrate $> rt
+    connect :: MonadIO m => Has (Throw Sterr) sig m => m DB.Runtime
+    connect = case db of
+      Just rt -> pure rt
+      Nothing -> case cfg ^. databaseConfig of
+        Nothing -> throwError (RuntimeError "no database configuration")
+        Just c  -> DB.initRuntime c mstore
 
     createOrMigrate :: (Has Database sig m, Has (Throw Sterr) sig m) => m ()
     createOrMigrate
@@ -108,9 +110,25 @@ initDatabase datadir cfg mstore = \case
     create = do
       exists <- DB.migrationTableExists
       unless exists migrate
+      runQuery createInitialSiteIfMissing
 
     migrate :: (Has Database sig m, Has (Throw Sterr) sig m) => m ()
     migrate =
       DB.migrate (datadir </> "schema") DB.MigrateVerbosely >>= \case
         DB.MigrationError e -> throwError (RuntimeError (toText e))
         DB.MigrationSuccess -> pass
+
+--------------------------------------------------------------------------------
+-- | Find a site from a remote request.
+--
+-- @since 0.1.0.0
+siteFromRemote
+  :: (Has Database sig m, Has (Throw Sterr) sig m)
+  => Remote
+  -> m Site
+siteFromRemote remote = runQuery siteQuery where
+  siteQuery :: Query Site
+  siteQuery =
+    select1 (siteFromFQDN (remote ^. requestFqdn)) >>= \case
+      Just site -> pure site
+      Nothing -> createInitialSite

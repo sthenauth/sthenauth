@@ -149,9 +149,11 @@ library
     Sthenauth.Core.Public
     Sthenauth.Core.Remote
     Sthenauth.Core.Session
+    Sthenauth.Core.Site
     Sthenauth.Core.URL
     Sthenauth.Core.Username
 
+    Sthenauth.Providers.Types
     Sthenauth.Providers.OIDC
       Sthenauth.Providers.OIDC.Known
       Sthenauth.Providers.OIDC.Public
@@ -160,16 +162,16 @@ library
       Sthenauth.Providers.OIDC.AuthN
       Sthenauth.Providers.OIDC.Provider
       Sthenauth.Providers.OIDC.Account
-    Sthenauth.Providers.Types
-    Sthenauth.Providers.Local.Login
-    Sthenauth.Providers.Local.Password
-    Sthenauth.Providers.Local.Account
-    Sthenauth.Providers.Local.Provider
+    Sthenauth.Providers.Local
+      Sthenauth.Providers.Local.Login
+      Sthenauth.Providers.Local.Password
+      Sthenauth.Providers.Local.Account
+      Sthenauth.Providers.Local.Provider
 
     Sthenauth.Effect
-    Sthenauth.Effect.Algebra
-    Sthenauth.Effect.Boot
-    Sthenauth.Effect.Carrier
-    Sthenauth.Effect.Runtime
+      Sthenauth.Effect.Algebra
+      Sthenauth.Effect.Boot
+      Sthenauth.Effect.Carrier
+      Sthenauth.Effect.Runtime
   other-modules:
     Paths_sthenauth

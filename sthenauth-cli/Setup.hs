@@ -14,10 +14,5 @@ Copyright:
 License: Apache-2.0
 
 -}
-module Sthenauth.Shell.Action
-  (
-  ) where
-
---------------------------------------------------------------------------------
-newtype Action = Action
-  { }
+import Distribution.Simple
+main = defaultMain

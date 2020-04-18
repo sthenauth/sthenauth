@@ -20,7 +20,6 @@ module Sthenauth.Core.Event
   ( EventF(..)
   , Event
   , EventId
-  , eventId
   , fireEvents
   , newEvent
   , insertEvents
@@ -38,32 +37,31 @@ import Sthenauth.Core.Database
 import Sthenauth.Core.Error
 import Sthenauth.Core.EventDetail
 import Sthenauth.Core.Remote (Remote)
+import Sthenauth.Core.Site (SiteId)
 
 --------------------------------------------------------------------------------
 -- | Primary key for the @events@ table.
 type EventId = Key UUID EventF
 
 --------------------------------------------------------------------------------
--- | Create an 'EventId'.
-eventId :: UUID -> EventId
-eventId = Key
-
---------------------------------------------------------------------------------
 -- | Generic details about an event.
 data EventF f = Event
-  { pk :: Col f "id" EventId SqlUuid ReadOnly
+  { eventId :: Col f "id" EventId SqlUuid ReadOnly
     -- ^ Primary key.
 
-  , actorId :: Col f "actor_id" AccountId SqlUuid Nullable
+  , eventSiteId :: Col f "site_id" SiteId SqlUuid ForeignKey
+    -- ^ The site this event is for.
+
+  , eventActorId :: Col f "actor_id" AccountId SqlUuid Nullable
     -- ^ The account that performed this action.
 
-  , remote :: Col f "remote" Remote SqlJsonb Required
+  , eventRemote :: Col f "remote" Remote SqlJsonb Required
     -- ^ Info about the remote connection that made the request.
 
-  , detail :: Col f "detail" EventDetail SqlJsonb Required
+  , eventDetail :: Col f "detail" EventDetail SqlJsonb Required
     -- ^ The specific event that fired.
 
-  , createdAt :: Col f "created_at" UTCTime SqlTimestamptz ReadOnly
+  , eventCreatedAt :: Col f "created_at" UTCTime SqlTimestamptz ReadOnly
     -- ^ The time this record was created.
 
   } deriving Generic
@@ -80,22 +78,24 @@ fireEvents
   :: ( Has Database      sig m
      , Has (Throw Sterr) sig m
      )
-  => CurrentUser
+  => SiteId
+  -> CurrentUser
   -> Remote
   -> [EventDetail]
   -> m ()
-fireEvents user remote details = do
-  let es = map (newEvent user remote) details
+fireEvents sid user remote details = do
+  let es = map (newEvent sid user remote) details
   void (transaction (insertEvents es))
 
 --------------------------------------------------------------------------------
-newEvent :: CurrentUser -> Remote -> EventDetail -> EventF SqlWrite
-newEvent user r d = Event
-  { pk        = Nothing
-  , createdAt = Nothing
-  , actorId   = O.maybeToNullable (toFields . accountId <$> toAccount user)
-  , remote    = toFields r
-  , detail    = toFields d
+newEvent :: SiteId -> CurrentUser -> Remote -> EventDetail -> EventF SqlWrite
+newEvent sid user r d = Event
+  { eventId        = Nothing
+  , eventCreatedAt = Nothing
+  , eventSiteId    = toFields sid
+  , eventActorId   = O.maybeToNullable (toFields . accountId <$> toAccount user)
+  , eventRemote    = toFields r
+  , eventDetail    = toFields d
   }
 
 --------------------------------------------------------------------------------

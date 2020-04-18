@@ -15,25 +15,26 @@ License: Apache-2.0
 
 -}
 module Sthenauth.Shell.Policy
-  ( SubCommand
+  ( Action
   , options
   , main
   ) where
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Control.Lens ((.~))
 import Options.Applicative as Options
+import Sthenauth.Core.Error
 import Sthenauth.Core.Policy
-import Sthenauth.Core.Site
-import Sthenauth.Database.Effect
-import Sthenauth.Shell.Command
+import Sthenauth.Effect
 
 --------------------------------------------------------------------------------
-newtype SubCommand
+-- | The policy manipulation actions supported.
+newtype Action
   = ChangeAccountCreationTo AccountCreation
 
 --------------------------------------------------------------------------------
-options :: Options.Parser SubCommand
+options :: Options.Parser Action
 options = Options.hsubparser $ mconcat
     [ cmd "mode" "Change account creation mode" modeOpts
     ]
@@ -41,7 +42,7 @@ options = Options.hsubparser $ mconcat
     cmd :: String -> String -> Parser a -> Mod CommandFields a
     cmd name desc p = command name (info p (progDesc desc))
 
-    modeOpts :: Parser SubCommand
+    modeOpts :: Parser Action
     modeOpts = ChangeAccountCreationTo <$>
       (   flag' AdminInvitation (
             mconcat [ long "admin-invite"
@@ -58,8 +59,11 @@ options = Options.hsubparser $ mconcat
       )
 
 --------------------------------------------------------------------------------
-main :: SubCommand -> Command ()
+main
+  :: Has Sthenauth     sig m
+  => Has (Throw Sterr) sig m
+  => Action
+  -> m ()
 main = \case
-  ChangeAccountCreationTo mode -> do
-    site <- asks currentSite
-    runQuery (modifyPolicy site (accountCreation .~ mode))
+  ChangeAccountCreationTo mode ->
+    modifySitePolicy (accountCreation .~ mode)

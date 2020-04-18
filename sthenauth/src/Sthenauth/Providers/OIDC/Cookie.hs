@@ -36,14 +36,20 @@ import Iolaus.Database.Table
 import qualified Opaleye as O
 import Sthenauth.Core.Crypto
 import Sthenauth.Core.Policy
+import Sthenauth.Core.Site (SiteId, Site, SiteF(..))
 import Sthenauth.Providers.OIDC.Provider
 import Web.Cookie
 
 --------------------------------------------------------------------------------
 data OidcCookieF f = OidcCookie
   { oidcHashedCookie :: Col f "hashed_cookie" (SaltedHash ByteString) SqlBytea Required
+    -- ^ Secured cookie value.
+
+  , oidcCookieSiteId :: Col f "site_id" SiteId SqlUuid ForeignKey
+    -- ^ The site this cookie belongs to.
 
   , oidcCookieProviderId :: Col f "provider_id" ProviderId SqlUuid ForeignKey
+    -- ^ The OIDC provider that we are talking to.
 
   , oidcCookieExpiresAt :: Col f "expires_at" UTCTime SqlTimestamptz Required
     -- ^ The time the cookie will expire and no longer be valid.
@@ -61,16 +67,17 @@ type OidcCookie = OidcCookieF ForHask
 -- | Save a cookie in the database so a returning end-user can be verified.
 newOidcCookie
   :: Has Crypto sig m
-  => Policy     -- ^ Policy.
+  => Site       -- ^ The site this cookie will belong to.
   -> UTCTime    -- ^ Current time.
   -> SetCookie  -- ^ The cookie to save.
   -> ProviderId -- ^ The associated OIDC provider.
   -> m (Insert Int64)
-newOidcCookie policy time cookie pid = do
+newOidcCookie site time cookie pid = do
     hashed <- toSaltedHash (setCookieValue cookie)
     pure . toInsert $
       OidcCookie
         { oidcHashedCookie     = toFields hashed
+        , oidcCookieSiteId     = toFields (siteId site)
         , oidcCookieProviderId = toFields pid
         , oidcCookieExpiresAt  = toFields expiresT
         , oidcCookieCreatedAt  = Nothing
@@ -80,7 +87,7 @@ newOidcCookie policy time cookie pid = do
     toInsert c = Insert openidconnect_cookies [c] rCount Nothing
 
     expiresT :: UTCTime
-    expiresT = addSeconds (policy ^. oidcCookieExpiresIn) time
+    expiresT = addSeconds (sitePolicy site ^. oidcCookieExpiresIn) time
 
 --------------------------------------------------------------------------------
 -- | Find a provider record given a cookie's clear bytes.
@@ -89,9 +96,10 @@ newOidcCookie policy time cookie pid = do
 -- after it's no longer needed.
 lookupProviderFromOidcCookie
   :: Has Crypto sig m
-  => ByteString -- ^ The raw cookie value from the browser.
+  => SiteId     -- ^ The current site ID.
+  -> ByteString -- ^ The raw cookie value from the browser.
   -> m (Select (OidcCookieF SqlRead, ProviderF SqlRead))
-lookupProviderFromOidcCookie cookie = do
+lookupProviderFromOidcCookie sid cookie = do
     hashed <- toSaltedHash cookie
     pure (query hashed)
   where
@@ -102,6 +110,8 @@ lookupProviderFromOidcCookie cookie = do
       t1 <- fromProviders -< ()
       O.restrict -<
         (oidcCookieProviderId t0 .== providerId t1
+          .&& providerSiteId t1 .== toFields sid
+          .&& oidcCookieSiteId t0 .== toFields sid
           .&& oidcHashedCookie t0 .== toFields hashed
           .&& oidcCookieExpiresAt t0 .> transactionTimestamp)
       returnA -< (t0, t1)
@@ -113,6 +123,8 @@ deleteOidcCookie
 deleteOidcCookie cookie =
   Delete
     { dTable     = openidconnect_cookies
-    , dWhere     = \c -> oidcHashedCookie c .== toFields (oidcHashedCookie cookie)
     , dReturning = rCount
+    , dWhere     = \c ->
+        oidcHashedCookie c .== toFields (oidcHashedCookie cookie)
+          .&& oidcCookieSiteId c .== toFields (oidcCookieSiteId cookie)
     }

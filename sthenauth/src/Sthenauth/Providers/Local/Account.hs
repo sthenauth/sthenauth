@@ -34,6 +34,7 @@ import qualified Opaleye as O
 import Sthenauth.Core.Account as Account
 import Sthenauth.Core.Crypto
 import Sthenauth.Core.Email (SafeEmail, toSafeEmail, getEmail)
+import Sthenauth.Core.Site (SiteId)
 import Sthenauth.Providers.Local.Login (Login, getLogin)
 
 --------------------------------------------------------------------------------
@@ -53,7 +54,7 @@ newLocalAccount
   :: Has Crypto sig m
   => Login
   -> Password Hashed
-  -> m (AccountId -> NonEmpty (Insert Int64))
+  -> m (Account -> NonEmpty (Insert Int64))
 newLocalAccount login password =
   case getLogin login of
     Left _ ->
@@ -64,9 +65,12 @@ newLocalAccount login password =
       pure $ go (Just safe)
 
   where
-    go :: Maybe SafeEmail -> AccountId -> NonEmpty (Insert Int64)
-    go email aid = newLA aid
-                :| maybe [] (\e -> [newAccountEmail e Nothing aid]) email
+    go :: Maybe SafeEmail -> Account -> NonEmpty (Insert Int64)
+    go email acct =
+      let aid = accountId acct
+          sid = accountSiteId acct
+      in newLA aid :|
+         maybe [] (\e -> [newAccountEmail e Nothing aid sid]) email
 
     newLA :: AccountId -> Insert Int64
     newLA aid = toInsert $
@@ -84,12 +88,13 @@ newLocalAccount login password =
 -- | Find an account using a username or an email address.
 accountByLogin
   :: Has Crypto sig m
-  => Login
+  => SiteId
+  -> Login
   -> m (Select (AccountF SqlRead, LocalAccountF SqlRead))
-accountByLogin l =
+accountByLogin sid l =
   case getLogin l of
-    Left  u -> pure $ query (findAccountByUsername u)
-    Right e -> query . findAccountByEmail <$> toSaltedHash (getEmail e)
+    Left  u -> pure $ query (findAccountByUsername sid u)
+    Right e -> query . findAccountByEmail sid <$> toSaltedHash (getEmail e)
 
   where
     -- Restrict the accounts table then run a sub-query.

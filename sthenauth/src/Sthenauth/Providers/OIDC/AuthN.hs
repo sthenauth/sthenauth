@@ -45,6 +45,7 @@ import Sthenauth.Core.EventDetail
 import Sthenauth.Core.HTTP
 import Sthenauth.Core.Policy
 import Sthenauth.Core.Remote
+import Sthenauth.Core.Site (SiteF(..), Site, SiteId)
 import Sthenauth.Core.URL
 import Sthenauth.Providers.OIDC.Account
 import Sthenauth.Providers.OIDC.Cookie
@@ -91,17 +92,17 @@ requestOIDC
      , Has (Throw Sterr) sig m
      , MonadRandom           m
      )
-  => Remote
-  -> Policy
+  => Site
+  -> Remote
   -> RequestOIDC
   -> m ProviderResponse
-requestOIDC remote policy = \case
+requestOIDC site remote = \case
   LoginWithOidcProvider url login ->
-    startProviderLogin remote policy url login
+    startProviderLogin site remote url login
   SuccessfulReturnFromProvider url browser ->
-    returnFromProvider remote url browser
+    returnFromProvider site remote url browser
   FailedReturnFromProvider perror ->
-    authenticationFailed perror
+    authenticationFailed (siteId site) perror
   BackendLogout _ ->
     -- FIXME: Update this when we support backend logout.
     pure (SuccessfulLogout Nothing)
@@ -117,19 +118,19 @@ startProviderLogin
      , Has (Throw Sterr) sig m
      , MonadRandom           m
      )
-  => Remote
-  -> Policy
+  => Site
+  -> Remote
   -> URL
   -> OidcLogin
   -> m ProviderResponse
-startProviderLogin remote policy url (OidcLogin uuid) = do
+startProviderLogin site remote url (OidcLogin uuid) = do
   provider <- fetchProvider >>= refreshProvider (remote ^. requestTime)
   req <- authReq provider
   OIDC.authenticationRedirect
     (unliftJSON (providerDiscoveryDoc provider)) req >>= \case
       Left e  -> throwError (OidcProviderError (SomeException e))
       Right (OIDC.RedirectTo uri cookief) -> do
-        let cookie = cookief (encodeUtf8 (oidcCookieName policy))
+        let cookie = cookief (encodeUtf8 (oidcCookieName $ sitePolicy site))
         saveCookie provider cookie
         pure (ProcessAdditionalStep (RedirectTo (urlFromURI uri)) (Just cookie))
 
@@ -146,7 +147,7 @@ startProviderLogin remote policy url (OidcLogin uuid) = do
 
     saveCookie :: Provider -> SetCookie -> m ()
     saveCookie provider cookie = do
-      query <- newOidcCookie policy
+      query <- newOidcCookie site
           (remote ^. requestTime) cookie (providerId provider)
       transaction $ do
         1 <- insert query
@@ -162,12 +163,13 @@ returnFromProvider
      , Has (Throw Sterr) sig m
      , MonadRandom           m
      )
-  => Remote
+  => Site
+  -> Remote
   -> URL
   -> OIDC.UserReturnFromRedirect
   -> m ProviderResponse
-returnFromProvider remote url browser = do
-  (cookie, provider) <- findSessionCookie
+returnFromProvider site remote url browser = do
+  (cookie, provider) <- findSessionCookie (siteId site)
     (OIDC.afterRedirectSessionCookie browser)
   runQuery_ (delete (deleteOidcCookie cookie))
   creds <- providerCredentials url provider
@@ -188,7 +190,7 @@ returnFromProvider remote url browser = do
     findAccountsFromToken provider token = runMaybeT $ do
       let claims = TR.idToken token
           time   = remote ^. requestTime
-      query <- hoistMaybe (selectAccountsByClaims (providerId provider) claims)
+      query <- hoistMaybe (selectAccountsByClaims (siteId site) (providerId provider) claims)
       (acct, oacct) <- MaybeT $ runQuery (select1 query)
       (upAcct, insEmail) <- lift (updateAccountFromToken oacct time token)
       lift . transaction $ do
@@ -203,13 +205,14 @@ returnFromProvider remote url browser = do
       -> TokenResponse ClaimsSet
       -> m Account
     createAccounts provider token =
-      newOidcAccount (providerId provider) (remote ^. requestTime) token >>= \case
-        (Nothing, _) -> throwError OidcProviderInvalidClaimsSet
-        (Just oai, emailm) -> transaction $ do
-          Just account <- insert1 (newAccount Nothing)
-          1 <- insert (oai (accountId account))
-          traverse_ insert (emailm <*> pure (accountId account))
-          pure account
+      newOidcAccount (siteId site) (providerId provider)
+        (remote ^. requestTime) token >>= \case
+          (Nothing, _) -> throwError OidcProviderInvalidClaimsSet
+          (Just oai, emailm) -> transaction $ do
+            Just account <- insert1 (newAccount (siteId site) Nothing)
+            1 <- insert (oai (accountId account))
+            traverse_ insert (emailm <*> pure (accountId account))
+            pure account
 
     ----------------------------------------------------------------------------
     -- Fetch an existing account, or create a new one.
@@ -231,10 +234,11 @@ authenticationFailed
      , Has Crypto        sig m
      , Has (Throw Sterr) sig m
      )
-  => IncomingOidcProviderError
+  => SiteId
+  -> IncomingOidcProviderError
   -> m ProviderResponse
-authenticationFailed perror = do
-    (cookie, provider) <- findSessionCookie (oidcSessionCookieValue perror)
+authenticationFailed sid perror = do
+    (cookie, provider) <- findSessionCookie sid (oidcSessionCookieValue perror)
     runQuery_ (delete $ deleteOidcCookie cookie)
     pure (FailedAuthN OidcProviderAuthenticationFailed (details provider))
   where
@@ -271,8 +275,10 @@ findSessionCookie
      , Has Crypto        sig m
      , Has (Throw Sterr) sig m
      )
-  => ByteString -> m (OidcCookie, Provider)
-findSessionCookie cookie = do
-  query <- lookupProviderFromOidcCookie cookie
+  => SiteId
+  -> ByteString
+  -> m (OidcCookie, Provider)
+findSessionCookie sid cookie = do
+  query <- lookupProviderFromOidcCookie sid cookie
   whenNothingM (runQuery (select1 query)) $
     throwUserError MustAuthenticateError

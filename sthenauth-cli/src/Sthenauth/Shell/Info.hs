@@ -19,18 +19,11 @@ module Sthenauth.Shell.Info
   ) where
 
 --------------------------------------------------------------------------------
--- Library Imports:
+-- Imports:
 import Data.Aeson.Encode.Pretty (encodePretty)
-import qualified Data.ByteString.Lazy as LByteString
-
---------------------------------------------------------------------------------
--- Project Imports:
-import Sthenauth.Shell.Command
-import Sthenauth.Shell.Options (Options)
+import Sthenauth.Core.Config
 
 --------------------------------------------------------------------------------
 -- | Simple command that dumps the current configuration.
-main :: Options a -> Command ()
-main _ = do
-  cfg <- asks currentConfig
-  liftIO $ LByteString.putStr (encodePretty cfg)
+main :: MonadIO m => Config -> m ()
+main = liftIO . putLBSLn . encodePretty

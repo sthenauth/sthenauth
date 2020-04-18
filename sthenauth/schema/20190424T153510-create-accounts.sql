@@ -1,6 +1,7 @@
 /* ---------------------------------------------------------------------------- */
 CREATE TABLE accounts (
   id         UUID PRIMARY KEY DEFAULT uuid_generate_v1mc(),
+  site_id    UUID NOT NULL REFERENCES sites ON DELETE CASCADE,
   username   TEXT CHECK(username IS NULL OR LENGTH(username) > 1),
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp

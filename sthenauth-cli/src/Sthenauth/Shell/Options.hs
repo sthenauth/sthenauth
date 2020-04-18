@@ -18,48 +18,54 @@ module Sthenauth.Shell.Options
   ( IsCommand(..)
   , Options(..)
   , overrideConfig
-  , parse
+  , parseOptions
+  , loadConfig
   ) where
 
 --------------------------------------------------------------------------------
 -- Imports:
+import Control.Lens ((^.), (.~), (||~))
 import qualified Data.List as List
 import Data.Version (showVersion)
+import qualified Data.Yaml as YAML
 import Iolaus.Database.Config
 import Options.Applicative
-import qualified Paths_sthenauth as Sthenauth
+import qualified Paths_sthenauth_cli as Sthenauth
 import Sthenauth.Core.Config
+import System.Directory (XdgDirectoryList(..), getXdgDirectoryList, doesFileExist)
 import System.Environment (getEnvironment)
+import System.FilePath ((</>))
 
 --------------------------------------------------------------------------------
 -- | Class for types that can act as a command.
 class IsCommand a where
   parseCommand :: Parser a
 
+instance IsCommand () where
+  parseCommand = empty
+
 --------------------------------------------------------------------------------
 -- | Global command line options.
 data Options a = Options
-  { version  :: Bool
-  , init     :: Bool
-  , migrate  :: Bool
-  , config   :: FilePath
-  , dbconn   :: Maybe String
-  , secrets  :: Maybe FilePath
-  , site     :: Text
-  , session  :: Maybe Text
-  , email    :: Maybe Text
-  , password :: Maybe Text
-  , command  :: a
+  { optionsInit     :: Bool
+  , optionsMigrate  :: Bool
+  , optionsConfig   :: Maybe FilePath
+  , optionsDbconn   :: Maybe Text
+  , optionsSecrets  :: Maybe FilePath
+  , optionsSite     :: Text
+  , optionsSession  :: Maybe Text
+  , optionsEmail    :: Maybe Text
+  , optionsPassword :: Maybe Text
+  , optionsCommand  :: a
   }
 
 --------------------------------------------------------------------------------
 -- | Command line parser.
-parser :: (IsCommand a) => [(String, String)] -> Parser (Options a)
+parser :: IsCommand a => [(String, String)] -> Parser (Options a)
 parser env =
-  Options <$> optVersion
-          <*> optInit "INIT"
+  Options <$> optInit "INIT"
           <*> optMigrate "MIGRATE"
-          <*> optConfig "CONFIG"
+          <*> optional (optConfig "CONFIG")
           <*> optional (optDbconn "DB")
           <*> optional (optSecrets "SECRETS_DIR")
           <*> optSite
@@ -67,15 +73,7 @@ parser env =
           <*> optional (option str (long "email"    <> hidden))
           <*> optional (option str (long "password" <> hidden))
           <*> parseCommand
-
   where
-    optVersion :: Parser Bool
-    optVersion = switch $
-      mconcat [ short 'V'
-              , long "version"
-              , help "Print version info and exit"
-              ]
-
     optInit :: String -> Parser Bool
     optInit key = ((not . null <$> tryEnv key) <|>) $ switch $
       mconcat [ short 'i'
@@ -95,12 +93,11 @@ parser env =
       mconcat [ short 'c'
               , long "config"
               , metavar "FILE"
-              , value (baseDirectory </> "config.yml")
               , help ("Specify the configuration file to use" <> also key)
               ]
 
-    optDbconn :: String -> Parser String
-    optDbconn key = (tryEnv key <|>) $ strOption $
+    optDbconn :: String -> Parser Text
+    optDbconn key = ((toText <$> tryEnv key) <|>) $ strOption $
       mconcat [ long "db"
               , metavar "STR"
               , help ("Use STR as the database connection string" <> also key)
@@ -140,33 +137,56 @@ parser env =
 --------------------------------------------------------------------------------
 -- | Override configuration options from command line or environment.
 overrideConfig :: Options a -> Config -> Config
-overrideConfig Options{secrets, dbconn} =
-  (secretsPath .~ fromMaybe (defaultConfig ^. secretsPath) secrets) .
-  over database setConnStr
-
-  where
-    setConnStr c =
-      case dbconn of
-        Nothing -> c
-        Just s  -> c & databaseConnectionString .~ toText s
+overrideConfig Options{..} config
+  = config
+  & databaseConfig .~ ((config ^. databaseConfig) <|> (defaultDbConfig <$> optionsDbconn))
+  & secretsPath .~ fromMaybe (config ^. secretsPath) optionsSecrets
+  & initializeMissingData ||~ optionsInit
+  & runDatabaseMigrations ||~ optionsMigrate
 
 --------------------------------------------------------------------------------
 -- | Execute a command line parser and return the resulting options.
-parse :: (IsCommand a) => IO (Options a)
-parse = do
-  env <- getEnvironment
-  options <- execParser (optInfo env)
-
-  when (version options) $ do
-    putStrLn (showVersion Sthenauth.version)
-    exitSuccess
-
-  pure options
-
+parseOptions :: forall a. IsCommand a => IO (Options a)
+parseOptions = do
+    env <- getEnvironment
+    execParser (optInfo env)
   where
-    optInfo :: (IsCommand a) => [(String, String)] -> ParserInfo (Options a)
-    optInfo env = info (parser env <**> helper) $
+    optInfo :: [(String, String)] -> ParserInfo (Options a)
+    optInfo env = info (helper <*> optVersion <*> parser env) $
       mconcat [ fullDesc
               , progDesc "Run the sthenauth command COMMAND"
-              , header "sthenauth - A micro-service for authentication"
               ]
+
+    optVersion =
+      infoOption ("Sthenauth Version: " <> showVersion Sthenauth.version) $
+        mconcat [ short 'V'
+                , long "version"
+                , help "Print version info and exit"
+                ]
+
+--------------------------------------------------------------------------------
+-- | Load a configuration file from disk.  If one can't be found
+-- return the default configuration file.
+--
+-- @since 0.1.0.0
+loadConfig :: forall m a. MonadIO m => Options a -> m Config
+loadConfig opts = configDirs
+              >>= load
+              <&> fromMaybe (defaultConfig ".")
+              <&> overrideConfig opts
+  where
+    configDirs :: m [FilePath]
+    configDirs = do
+      xdg <- liftIO (getXdgDirectoryList XdgConfigDirs)
+      pure (map (</> "sthenauth") $ xdg <> ["/var/lib", "/etc"])
+
+    load :: [FilePath] -> m (Maybe Config)
+    load paths = traverse exists paths <&> asum >>= \case
+      Nothing -> pure Nothing
+      Just file -> liftIO (Just <$> YAML.decodeFileThrow file)
+
+    exists :: FilePath -> m (Maybe FilePath)
+    exists dir = do
+      let file = dir </> "config.yml"
+      e <- liftIO (doesFileExist file)
+      pure $ if e then Just file else Nothing

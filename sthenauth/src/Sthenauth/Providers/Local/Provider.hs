@@ -15,8 +15,7 @@ License: Apache-2.0
 
 -}
 module Sthenauth.Providers.Local.Provider
-  ( Credentials(name)
-  , authenticate
+  ( authenticate
   , insertLocalAccountQuery
   , createNewLocalAccount
   ) where
@@ -29,8 +28,8 @@ import Sthenauth.Core.Account (Account, accountId, newAccount)
 import Sthenauth.Core.Crypto
 import Sthenauth.Core.Database
 import Sthenauth.Core.Error
-import Sthenauth.Core.Policy
 import Sthenauth.Core.Remote
+import Sthenauth.Core.Site (SiteF(..), Site)
 import Sthenauth.Providers.Local.Account
 import Sthenauth.Providers.Local.Login
 import Sthenauth.Providers.Local.Password
@@ -43,21 +42,19 @@ authenticate
      , Has Database      sig m
      , Has (Throw Sterr) sig m
      )
-  => Policy
+  => Site
   -> RequestTime
   -> Credentials
   -> m ProviderResponse
-authenticate policy rtime creds = do
+authenticate site rtime creds = do
     (login, passwd) <- whenNothing (fromCredentials creds) $
       throwUserError InvalidUsernameOrEmailError
 
-    query <- accountByLogin login
+    query <- accountByLogin (siteId site) login
+    (sys, local) <- runQuery (select1 query)
+      >>= maybe (throwUserError NotFoundError) pure
 
-    (sys, local) <- runQuery $ do
-      Just a <- select1 query
-      pure a
-
-    verifyAndUpgradePassword policy rtime passwd local >>= \case
+    verifyAndUpgradePassword (sitePolicy site) rtime passwd local >>= \case
       PasswordIncorrect ->
         throwUserError (AuthenticationFailedError (Just . getKey . accountId $ sys))
       PasswordVerified ->
@@ -69,21 +66,21 @@ insertLocalAccountQuery
   :: ( Has Crypto        sig m
      , Has (Throw Sterr) sig m
      )
-  => Policy
+  => Site
   -> RequestTime
   -> Credentials
   -> m (Query Account)
-insertLocalAccountQuery policy rtime creds = do
+insertLocalAccountQuery site rtime creds = do
   (login, clear) <- whenNothing (fromCredentials creds) $
     throwUserError InvalidUsernameOrEmailError
 
-  strong <- asStrongPassword policy rtime clear
+  strong <- asStrongPassword (sitePolicy site) rtime clear
   hashed <- toHashedPassword strong
   actF <- newLocalAccount login hashed
 
   pure $ do
-    Just a <- insert1 (newAccount (leftToMaybe $ getLogin login))
-    mapM_ insert (actF $ accountId a)
+    Just a <- insert1 (newAccount (siteId site) (leftToMaybe $ getLogin login))
+    mapM_ insert (actF a)
     pure a
 
 --------------------------------------------------------------------------------
@@ -93,11 +90,11 @@ createNewLocalAccount
      , Has Database      sig m
      , Has (Throw Sterr) sig m
      )
-  => Policy
+  => Site
   -> RequestTime
   -> Credentials
   -> m ProviderResponse
-createNewLocalAccount policy rtime creds = do
-  query <- insertLocalAccountQuery policy rtime creds
+createNewLocalAccount site rtime creds = do
+  query <- insertLocalAccountQuery site rtime creds
   account <- transaction query
   pure (SuccessfulAuthN account NewAccount)

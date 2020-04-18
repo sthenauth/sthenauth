@@ -15,39 +15,30 @@ License: Apache-2.0
 
 -}
 module Sthenauth.Shell.Provider
-  ( SubCommand
+  ( Action
   , options
   , main
   ) where
 
 --------------------------------------------------------------------------------
 -- Imports:
-import Control.Lens (folded, filtered, firstOf)
-import Iolaus.Database.JSON
-import Iolaus.Database.Query
+import Control.Lens ((^.), folded, filtered, firstOf)
 import Options.Applicative as Options
 import Sthenauth.Core.Error
-import Sthenauth.Core.HTTP
-import Sthenauth.Crypto.Effect
-import Sthenauth.Database.Effect
-import Sthenauth.Providers.OIDC.Known as K
-import Sthenauth.Providers.OIDC.Provider
-import Sthenauth.Shell.Command
+import Sthenauth.Effect
+import qualified Sthenauth.Providers.OIDC.Known as K
 
 --------------------------------------------------------------------------------
-data OidcClientInfo = OidcClientInfo
-  { oidcClientId     :: Text
-  , oidcClientSecret :: Text
-  }
+data OidcClientInfo = OidcClientInfo OidcClientId Text
 
 --------------------------------------------------------------------------------
-data OidcProvider
+data OidcProviderDetails
   = FromKnownProviders Text OidcClientInfo
   | FromAltProviders FilePath Text OidcClientInfo
 
 --------------------------------------------------------------------------------
-newtype SubCommand
-  = RegisterOIDC OidcProvider
+newtype Action
+  = RegisterOIDC OidcProviderDetails
 
 --------------------------------------------------------------------------------
 oidcClientInfo :: Parser OidcClientInfo
@@ -66,10 +57,10 @@ oidcClientInfo =
           ])
 
 --------------------------------------------------------------------------------
-oidcProvider :: Parser OidcProvider
+oidcProvider :: Parser OidcProviderDetails
 oidcProvider = fromKnown <|> fromAlt
   where
-    fromKnown :: Parser OidcProvider
+    fromKnown :: Parser OidcProviderDetails
     fromKnown =
       FromKnownProviders
         <$> strOption (mconcat
@@ -79,7 +70,7 @@ oidcProvider = fromKnown <|> fromAlt
               ])
         <*> oidcClientInfo
 
-    fromAlt :: Parser OidcProvider
+    fromAlt :: Parser OidcProviderDetails
     fromAlt =
       FromAltProviders
         <$> strOption (mconcat
@@ -97,7 +88,7 @@ oidcProvider = fromKnown <|> fromAlt
         <*> oidcClientInfo
 
 --------------------------------------------------------------------------------
-options :: Options.Parser SubCommand
+options :: Options.Parser Action
 options = Options.hsubparser $ mconcat
     [ cmd "oidc-register" "Register an OpenID Connect Provider"
           (RegisterOIDC <$> oidcProvider)
@@ -107,46 +98,35 @@ options = Options.hsubparser $ mconcat
     cmd name pdesc p = command name (info p (progDesc pdesc))
 
 --------------------------------------------------------------------------------
-registerOidcProvider :: OidcProvider -> Command ()
-registerOidcProvider = \case
+registerOidcProviderFromDetails
+  :: forall sig m.
+     MonadIO m
+  => Has Sthenauth sig m
+  => Has (Throw Sterr) sig m
+  => OidcProviderDetails
+  -> m ()
+registerOidcProviderFromDetails = \case
   FromKnownProviders name oinfo ->
-    loadKnownProviders Nothing >>= go name oinfo
+    loadKnownOidcProviders Nothing >>= go name oinfo
   FromAltProviders file name oinfo ->
-    loadKnownProviders (Just file) >>= go name oinfo
+    loadKnownOidcProviders (Just file) >>= go name oinfo
   where
-    go :: Text -> OidcClientInfo -> [Known] -> Command ()
+    go :: Text -> OidcClientInfo -> [KnownOidcProvider] -> m ()
     go name oinfo ps =
      case firstOf (folded.filtered ((== name) . (^. K.providerName))) ps of
        Nothing -> throwUserError (UserInputError ("unknown provider: " <> name))
        Just provider -> createOidcProviderRecord provider oinfo
 
-    -- FIXME: Move most of this code into the provider module.
-    createOidcProviderRecord :: Known -> OidcClientInfo -> Command ()
-    createOidcProviderRecord kp oci = do
-      safeClientSecret <- encrypt (ProviderPlainPassword (oidcClientSecret oci))
-      (disco, dcache)  <- fetchDiscoveryDocument http (kp ^. discoveryUrl)
-      (keys, kcache)   <- fetchProviderKeys http disco
-
-      let prov = Provider
-            { providerId                 = Nothing
-            , providerEnabled            = toFields True
-            , providerName               = toFields (kp ^. K.providerName)
-            , providerLogoUrl            = toFields (kp ^. K.logoUrl)
-            , providerClientId           = toFields (oidcClientId oci)
-            , providerClientSecret       = toFields safeClientSecret
-            , providerDiscoveryUrl       = toFields (kp ^. K.discoveryUrl)
-            , providerDiscoveryDoc       = toFields (LiftJSON disco)
-            , providerDiscoveryExpiresAt = toFields dcache
-            , providerJwkSet             = toFields (LiftJSON keys)
-            , providerJwkSetExpiresAt    = toFields kcache
-            , providerCreatedAt          = Nothing
-            , providerUpdatedAt          = Nothing
-            }
-      runQuery $ do
-        1 <- insertProviderReturningCount prov
-        pass
+    createOidcProviderRecord :: KnownOidcProvider -> OidcClientInfo -> m ()
+    createOidcProviderRecord kp (OidcClientInfo pid pass) =
+      registerOidcProvider kp pid (OidcClientPlainPassword pass) $> ()
 
 --------------------------------------------------------------------------------
-main :: SubCommand -> Command ()
+main
+  :: MonadIO m
+  => Has Sthenauth sig m
+  => Has (Throw Sterr) sig m
+  => Action
+  -> m ()
 main = \case
-  RegisterOIDC p -> registerOidcProvider p
+  RegisterOIDC p -> registerOidcProviderFromDetails p

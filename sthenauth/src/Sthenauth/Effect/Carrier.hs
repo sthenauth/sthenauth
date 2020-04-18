@@ -29,29 +29,31 @@ import Control.Carrier.Error.Either
 import Control.Carrier.Lift
 import Control.Carrier.Reader
 import Control.Carrier.State.Strict
-import Control.Lens ((^.), (%~), Lens', lens)
+import Control.Lens ((^.), (%~), Lens', lens, to)
 import qualified Control.Monad.Crypto.Cryptonite as Crypto
 import Crypto.Random (MonadRandom(..))
 import Data.List (lookup)
 import Data.Time.Clock (getCurrentTime)
 import qualified Iolaus.Database.Query as Query
-import Sthenauth.Core.Account (AccountId, accountId)
+import Sthenauth.Core.Account (Account, AccountId, accountId)
 import qualified Sthenauth.Core.Admin as Admin
 import qualified Sthenauth.Core.AuthN as Auth
 import qualified Sthenauth.Core.Capabilities as Capabilities
 import Sthenauth.Core.Crypto (CryptoC, runCrypto)
 import qualified Sthenauth.Core.Crypto as Crypto
 import Sthenauth.Core.CurrentUser
-import Sthenauth.Core.Database (transaction, runQuery)
+import Sthenauth.Core.Database (transaction, runQuery, runQuery_)
 import Sthenauth.Core.Error
 import Sthenauth.Core.HTTP
 import Sthenauth.Core.Policy (Policy, sessionCookieName, oidcCookieName)
 import Sthenauth.Core.Remote (Remote)
 import Sthenauth.Core.Session (resetSessionCookie)
+import Sthenauth.Core.Site
 import Sthenauth.Effect.Algebra
 import Sthenauth.Effect.Boot
 import Sthenauth.Effect.Runtime
-import Sthenauth.Providers.Local.Provider (Credentials(..), insertLocalAccountQuery)
+import Sthenauth.Providers.Local (Credentials(..), insertLocalAccountQuery)
+import qualified Sthenauth.Providers.Local.Account as Local
 import Sthenauth.Providers.OIDC
 import qualified Sthenauth.Providers.OIDC.Provider as OIDC
 import Web.Cookie (SetCookie)
@@ -72,7 +74,7 @@ instance (MonadIO m, Algebra sig m) => Algebra (Sthenauth :+: sig) (SthenauthC m
       rt <- SthenauthC ask
       cu <- readIORef (rt ^. tstate.user)
       unwrap (Capabilities.getCapabilities
-        (rt ^. env.config) (rt ^. env.policy)
+        (rt ^. env.config) (rt ^. tstate.site.to sitePolicy)
         (rt ^. tstate.remote) cu) >>= k
 
     L (GetCurrentUser k) -> do
@@ -82,8 +84,8 @@ instance (MonadIO m, Algebra sig m) => Algebra (Sthenauth :+: sig) (SthenauthC m
     L (SetCurrentUser key k) -> do
       rt <- SthenauthC ask
       cu <- unwrap
-        (currentUserFromSessionKey (rt ^. env.policy) (rt ^. currentTime) key)
-        <&> fromRight notLoggedIn
+        (currentUserFromSessionKey (rt ^. tstate.site)
+         (rt ^. currentTime) key) <&> fromRight notLoggedIn
       writeIORef (rt ^. tstate.user) cu
       k cu
 
@@ -101,12 +103,12 @@ instance (MonadIO m, Algebra sig m) => Algebra (Sthenauth :+: sig) (SthenauthC m
 
     L (FinishLoginWithOidcProvider url user k) -> do
       rt <- SthenauthC ask
-      let user' = updateCookie (rt ^. env.policy) user
+      let user' = updateCookie (rt ^. tstate.site.to sitePolicy) user
       runRequestAuthN (Auth.FinishLoginWithOidcProvider url user') >>= k
 
     L (ProcessFailedOidcProviderLogin e k) -> do
       rt <- SthenauthC ask
-      let e' = updateCookie (rt ^. env.policy) e
+      let e' = updateCookie (rt ^. tstate.site.to sitePolicy) e
       runRequestAuthN (Auth.ProcessFailedOidcProviderLogin e') >>= k
 
     L (Logout k) -> do
@@ -116,17 +118,38 @@ instance (MonadIO m, Algebra sig m) => Algebra (Sthenauth :+: sig) (SthenauthC m
         _ -> do
           -- Ignore errors and force a logout:
           writeIORef (rt ^. tstate.user) notLoggedIn
-          k $ resetSessionCookie (sessionCookieName (rt ^. env.policy))
+          k $ resetSessionCookie (sessionCookieName (rt ^. tstate.site.to sitePolicy))
 
     L (RegisterOidcProvider kp oi op k) ->
-      requireAdmin k $ unwrap (OIDC.registerOidcProvider http kp oi op)
+      requireAdmin k $ \rt -> unwrap $ do
+        let sid = rt ^. tstate.site.to siteId
+        OIDC.registerOidcProvider http sid kp oi op
+
+    L (ModifySite f k) ->
+      requireAdmin k $ \rt ->
+        unwrap . void . runQuery . updateSite $
+        f (rt ^. tstate.site)
+
+    L (ModifySitePolicy f k) ->
+      requireAdmin k $ \rt ->
+        unwrap . void . runQuery . Query.update $
+        modifyPolicy (rt ^. tstate.site) f
+
+    L (AlterAccountAdminStatus login alt k) ->
+      -- FIXME: fire events!
+      requireAdmin k $ \rt -> unwrap $ do
+        acctQ <- Local.accountByLogin (rt ^. tstate.site.to siteId) login
+        runQuery (Query.select1 acctQ) >>= \case
+          Nothing -> throwUserError NotFoundError
+          Just (acct :: Account, _ :: Local.LocalAccount) ->
+            runQuery_ (Admin.alterAdmin (accountId acct) alt)
 
     where
       requireAdmin k action = do
         rt <- SthenauthC ask
         user <- readIORef (rt ^. tstate.user)
         if isAdmin user
-          then action >>= k
+          then action rt >>= k
           else k (Left $ ApplicationUserError PermissionDenied)
 
 --------------------------------------------------------------------------------
@@ -159,7 +182,7 @@ runRequestAuthN
   -> SthenauthC m (Either Sterr (Maybe SetCookie, Auth.ResponseAuthN))
 runRequestAuthN req = do
   rt <- SthenauthC ask
-  withUser (Auth.requestAuthN (rt ^. env.policy) (rt ^. tstate.remote) req)
+  withUser (Auth.requestAuthN (rt ^. tstate.site) (rt ^. tstate.remote) req)
 
 --------------------------------------------------------------------------------
 -- | A type to help discharge all of the effects used in this library.
@@ -259,7 +282,8 @@ createInitialAdminAccount env creds = do
       whenM (runQuery (Query.count Admin.fromAdmins) <&> (/= 0)) $
         throwUserError PermissionDenied
 
-      query <- insertLocalAccountQuery (env ^. policy) now creds
+      site <- runQuery defaultSite
+      query <- insertLocalAccountQuery site now creds
       transaction $ do
         acct <- query
         Just _ <- Admin.insertAdmin (accountId acct)
@@ -280,12 +304,16 @@ createInitialAdminAccount env creds = do
 --
 --   3. Each authentication request thread calls 'runSthenauth'.
 runSthenauth
-  :: MonadIO m
+  :: (MonadIO m, Has (Throw Sterr) sig m)
   => Environment
   -> Remote
   -> SthenauthC m a
   -> m a
 runSthenauth e r m = do
-  cu <- liftIO (newIORef notLoggedIn)
-  let st = TState cu r
-  runReader (Runtime e st) (runSthenauthC m)
+    cu <- liftIO (newIORef notLoggedIn)
+    site <- getSite
+    let st = TState cu r site
+    runReader (Runtime e st) (runSthenauthC m)
+  where
+    getSite = siteFromRemote r
+            & runDatabase (e ^. database)

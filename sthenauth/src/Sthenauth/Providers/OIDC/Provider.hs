@@ -53,6 +53,7 @@ import Sthenauth.Core.Crypto
 import Sthenauth.Core.Database
 import Sthenauth.Core.Error
 import qualified Sthenauth.Core.HTTP as HTTP
+import Sthenauth.Core.Site (SiteId)
 import Sthenauth.Core.URL
 import Sthenauth.Providers.OIDC.Known (KnownOidcProvider)
 import qualified Sthenauth.Providers.OIDC.Known as Known
@@ -75,6 +76,9 @@ data OidcClientPassword
 data ProviderF f = Provider
   { providerId :: Col f "id" ProviderId SqlUuid ReadOnly
     -- ^ Primary key.
+
+  , providerSiteId :: Col f "site_id" SiteId SqlUuid ForeignKey
+    -- ^ The site this provider is registered for.
 
   , providerEnabled :: Col f "enabled" Bool SqlBool Required
     -- ^ Whether or not this provider is available for use.
@@ -123,11 +127,12 @@ type Provider = ProviderF ForHask
 newOidcProvider
   :: (Has Crypto sig m, Has (Throw Sterr) sig m)
   => HTTP.Client m
+  -> SiteId
   -> KnownOidcProvider
   -> OidcClientId
   -> OidcClientPassword
   -> m (Insert [Provider])
-newOidcProvider http kp cid pass = do
+newOidcProvider http sid kp cid pass = do
   safeClientSecret <- encrypt pass
   (disco, dcache)  <- fetchDiscoveryDocument http (kp ^. Known.discoveryUrl)
   (keys, kcache)   <- fetchProviderKeys http disco
@@ -136,6 +141,7 @@ newOidcProvider http kp cid pass = do
     toInsert $
       Provider
         { providerId                 = Nothing
+        , providerSiteId             = toFields sid
         , providerEnabled            = toFields True
         , providerName               = toFields (kp ^. Known.providerName)
         , providerLogoUrl            = toFields (kp ^. Known.logoUrl)
@@ -161,12 +167,13 @@ registerOidcProvider
      , Has (Throw Sterr) sig m
      )
   => HTTP.Client m
+  -> SiteId
   -> KnownOidcProvider
   -> OidcClientId
   -> OidcClientPassword
   -> m Provider
-registerOidcProvider http kp oi op = do
-  new <- newOidcProvider http kp oi op
+registerOidcProvider http sid kp oi op = do
+  new <- newOidcProvider http sid kp oi op
   runQuery $ do
     Just p <- insert1 new
     pure p

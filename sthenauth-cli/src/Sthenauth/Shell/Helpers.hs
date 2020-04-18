@@ -28,20 +28,18 @@ module Sthenauth.Shell.Helpers
 -- Imports:
 import Data.Time.Clock (getCurrentTime)
 import Iolaus.Crypto.Password as Crypto
-import Sthenauth.Core.Action (MonadByline(..))
+import Sthenauth.Core.Crypto
 import Sthenauth.Core.Email
 import Sthenauth.Core.Error
 import Sthenauth.Core.Policy
-import Sthenauth.Crypto.Effect
 import Sthenauth.Providers.Local.Password (asStrongPassword)
+import Sthenauth.Shell.Byline
 import System.Console.Byline as Byline
 
 --------------------------------------------------------------------------------
 -- | Run a byline action with a text conversion function.
 askWith
-  :: forall m a .
-     ( MonadByline m
-     )
+  :: forall sig m a. Has LiftByline sig m
   => Byline IO Text
   -> (Text -> m (Either Text a))
   -> m a
@@ -57,7 +55,7 @@ askWith action check =
 -- | If given a @Just@, try to parse it.  If given @Nothing@, call 'askWith'.
 checkOrAsk
   :: forall sig m a .
-     (MonadByline m, Has Error sig m)
+     (Has LiftByline sig m, Has (Throw Sterr) sig m)
   => Maybe Text
   -> Byline IO Text
   -> (Text -> m (Either Text a))
@@ -72,27 +70,22 @@ checkOrAsk mt action check =
 --------------------------------------------------------------------------------
 -- | Repeatedly prompt for an email address.
 askEmail
-  :: ( MonadIO m
-     , MonadByline m
-     )
+  :: Has LiftByline sig m
   => m Email
-askEmail = askWith emailAction checkEmail
+askEmail = askWith emailAction (pure . checkEmail)
 
 --------------------------------------------------------------------------------
 -- | Use the given address if present, otherwise prompt for one.
 maybeAskEmail
-  :: ( MonadIO m
-     , MonadByline m
-     , Has Error sig m
-     )
+  :: (Has LiftByline sig m, Has (Throw Sterr) sig m)
   => Maybe Text
   -> m Email
-maybeAskEmail mt = checkOrAsk mt emailAction checkEmail
+maybeAskEmail mt = checkOrAsk mt emailAction (pure . checkEmail)
 
 --------------------------------------------------------------------------------
 -- | Validate an email address.
-checkEmail :: (Monad m) => Text -> m (Either Text Email)
-checkEmail t = return $
+checkEmail :: Text -> Either Text Email
+checkEmail t =
   case toEmail t of
     Nothing -> Left "invalid email address\n"
     Just e  -> Right e
@@ -104,7 +97,10 @@ emailAction = Byline.ask "Email Address: " Nothing
 
 --------------------------------------------------------------------------------
 -- | Ask for a password if the given text is 'Nothing'.
-maybeAskPassword :: (MonadByline m, Has Error sig m) => Maybe Text -> m Text
+maybeAskPassword
+  :: (Has LiftByline sig m, Has (Throw Sterr) sig m)
+  => Maybe Text
+  -> m Text
 maybeAskPassword mt =
   checkOrAsk mt (askPassword "Password: " Nothing) (return . Right)
 
@@ -112,9 +108,9 @@ maybeAskPassword mt =
 -- | Byline action to prompt and confirm a new password.
 askNewPassword
   :: ( MonadIO m
-     , MonadByline m
+     , Has LiftByline sig m
      , Has Crypto sig m
-     , Has Error sig m
+     , Has (Error Sterr) sig m
      )
   => Policy
   -> m (Text, Password Strong)
@@ -138,9 +134,9 @@ askNewPassword policy = go
 -- for it.
 maybeAskNewPassword
   :: ( MonadIO m
-     , MonadByline m
+     , Has LiftByline sig m
      , Has Crypto sig m
-     , Has Error sig m
+     , Has (Error Sterr) sig m
      )
   => Policy
   -> Maybe Text
@@ -158,7 +154,7 @@ checkPasswordStrength
   :: forall sig m.
      ( MonadIO m
      , Has Crypto sig m
-     , Has Error  sig m
+     , Has (Error Sterr) sig m
      )
   => Policy
   -> Password Clear
@@ -167,6 +163,6 @@ checkPasswordStrength policy p = do
     time <- liftIO getCurrentTime
     catchError (Right <$> asStrongPassword policy time p) handleError
   where
-    handleError :: BaseError -> m (Either Text (Password Strong))
+    handleError :: Sterr -> m (Either Text (Password Strong))
     handleError (ApplicationUserError w@(WeakPasswordError _)) = pure (Left (show w))
     handleError e = throwError e

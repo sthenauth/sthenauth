@@ -64,18 +64,18 @@ fromAdmins = selectTable admins
 --------------------------------------------------------------------------------
 -- | Ways that an admin account can be altered.
 data AlterAdmin
-  = PromoteToAdmin AccountId   -- ^ Insert a new row.
-  | DemoteFromAdmin AccountId  -- ^ Delete an existing row.
+  = PromoteToAdmin -- ^ Insert a new row.
+  | DemoteFromAdmin -- ^ Delete an existing row.
 
 --------------------------------------------------------------------------------
 -- | A query that will execute an 'AlterAdmin' command.
-alterAdmin :: AlterAdmin -> Query ()
-alterAdmin = \case
-  PromoteToAdmin aid -> do
+alterAdmin :: AccountId -> AlterAdmin -> Query ()
+alterAdmin aid = \case
+  PromoteToAdmin -> do
     n <- selectAdmin aid
     when (n == 0) $ void (insertAdmin aid)
 
-  DemoteFromAdmin aid ->
+  DemoteFromAdmin ->
     void (deleteAdmin aid)
 
 --------------------------------------------------------------------------------

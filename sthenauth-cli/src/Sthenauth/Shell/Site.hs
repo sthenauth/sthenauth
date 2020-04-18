@@ -23,9 +23,10 @@ module Sthenauth.Shell.Site
 --------------------------------------------------------------------------------
 -- Imports:
 import Options.Applicative as Options
+import Sthenauth.Core.Error
 import Sthenauth.Core.Site
 import Sthenauth.Core.URL
-import Sthenauth.Shell.Command
+import Sthenauth.Effect
 
 --------------------------------------------------------------------------------
 data Actions = Actions
@@ -50,11 +51,13 @@ options =
           ]))
 
 --------------------------------------------------------------------------------
-main :: Actions -> Command ()
-main actions = do
-  site <- asks currentSite
-  updateSite (siteId site)
-    ((siteForUI site)
-      { siteFqdn = fromMaybe (siteFqdn site) (setFqdn actions)
-      , afterLoginUrl = fromMaybe (afterLoginUrl site) (setAfterLoginUrl actions)
-      })
+main
+  :: Has Sthenauth sig m
+  => Has (Throw Sterr) sig m
+  => Actions
+  -> m ()
+main Actions{..} =
+  modifySite $ \s ->
+    s { siteFqdn = fromMaybe (siteFqdn s) setFqdn
+      , siteAfterLoginUrl = fromMaybe (siteAfterLoginUrl s) setAfterLoginUrl
+      }

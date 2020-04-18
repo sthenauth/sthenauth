@@ -64,6 +64,7 @@ import Sthenauth.Core.Database
 import Sthenauth.Core.Error
 import Sthenauth.Core.Policy
 import Sthenauth.Core.Remote
+import Sthenauth.Core.Site (SiteId, Site, SiteF(..))
 import Web.Cookie
 
 --------------------------------------------------------------------------------
@@ -99,6 +100,9 @@ data SessionF f = Session
 
   , sessionKey :: Col f "session_key" SessionKey SqlBytea Required
     -- ^ Hashed key for looking up a session.
+
+  , sessionSiteId :: Col f "site_id" SiteId SqlUuid ForeignKey
+    -- ^ The site this session is for.
 
   , sessionAccountId :: Col f "account_id" AccountId SqlUuid ForeignKey
     -- ^ The account this email address is for (foreign key).
@@ -159,21 +163,25 @@ newSessionKey = do
 
 --------------------------------------------------------------------------------
 newSession
-  :: AccountId
+  :: Site
+  -> AccountId
   -> Remote
-  -> Policy
   -> SessionKey
   -> SessionF SqlWrite
-newSession account remote policy key = Session
-  { sessionId         = Nothing
-  , sessionCreatedAt  = Nothing
-  , sessionUpdatedAt  = Nothing
-  , sessionKey        = toFields key
-  , sessionExpiresAt  = toFields (sessionExpire policy   (remote ^. requestTime))
-  , sessionInactiveAt = toFields (sessionInactive policy (remote ^. requestTime))
-  , sessionAccountId  = toFields account
-  , sessionRemote     = toFields remote
-  }
+newSession site account remote key =
+  let policy = sitePolicy site
+      rtime  = remote ^. requestTime
+  in Session
+      { sessionId         = Nothing
+      , sessionCreatedAt  = Nothing
+      , sessionUpdatedAt  = Nothing
+      , sessionKey        = toFields key
+      , sessionExpiresAt  = toFields (sessionExpire policy   rtime)
+      , sessionInactiveAt = toFields (sessionInactive policy rtime)
+      , sessionSiteId     = toFields (siteId site)
+      , sessionAccountId  = toFields account
+      , sessionRemote     = toFields remote
+      }
 
 --------------------------------------------------------------------------------
 -- Issue a brand new session to the given account.
@@ -182,14 +190,15 @@ issueSession
      , Has Crypto   sig m
      , Has (Throw Sterr) sig m
      )
-  => Policy
+  => Site
   -> Remote
   -> Account
   -> m (Session, ClearSessionKey)
-issueSession policy remote acct = do
+issueSession site remote acct = do
   (clear, key) <- newSessionKey
 
-  let sessionW = newSession (accountId acct) remote policy key
+  let policy = sitePolicy site
+      sessionW = newSession site (accountId acct) remote key
       query = insertSession (policy ^. maxSessionsPerAccount) sessionW
 
   transaction query >>= \case
@@ -242,9 +251,10 @@ deleteSession = void . delete . rm . getKey
     rm sid = Delete sessions (\t -> sessionId t .== toFields sid) O.rCount
 
 --------------------------------------------------------------------------------
-findSessionQuery :: SessionKey -> O.SelectArr (SessionF SqlRead) ()
-findSessionQuery key = proc t ->
-  O.restrict -< sessionKey t .== toFields key
+findSessionQuery :: SiteId -> SessionKey -> O.SelectArr (SessionF SqlRead) ()
+findSessionQuery sid key = proc t ->
+  O.restrict -<  sessionKey t .== toFields key
+             .&& sessionSiteId t .== toFields sid
 
 --------------------------------------------------------------------------------
 fromSessions :: Select (SessionF SqlRead)
@@ -256,11 +266,14 @@ fromSessions = proc () -> do
   returnA -< t
 
 --------------------------------------------------------------------------------
-findSessionAccount :: SessionKey -> O.Select (SessionF SqlRead, AccountF SqlRead)
-findSessionAccount key = proc () -> do
+findSessionAccount
+  :: SiteId
+  -> SessionKey
+  -> O.Select (SessionF SqlRead, AccountF SqlRead)
+findSessionAccount sid key = proc () -> do
   a <- fromAccounts -< ()
   t <- fromSessions -< ()
-  findSessionQuery key -< t
+  findSessionQuery sid key -< t
   O.restrict -< accountId a .== sessionAccountId t
   returnA -< (t, a)
 

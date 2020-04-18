@@ -24,7 +24,7 @@ module Sthenauth.Effect.Runtime
   , database
   , env
   , httpr
-  , policy
+  , site
   , remote
   , tstate
   , user
@@ -39,8 +39,8 @@ import Sthenauth.Core.Config
 import qualified Sthenauth.Core.Crypto as Crypto
 import Sthenauth.Core.CurrentUser
 import Sthenauth.Core.HTTP
-import Sthenauth.Core.Policy
 import Sthenauth.Core.Remote
+import Sthenauth.Core.Site (Site)
 
 --------------------------------------------------------------------------------
 -- | Reader environment shared by all threads.
@@ -48,7 +48,6 @@ data Environment = Environment
   { _database :: DB.Runtime
   , _crypto   :: Crypto.Runtime
   , _httpr    :: HttpR
-  , _policy   :: Policy
   , _config   :: Config
   }
 
@@ -59,6 +58,7 @@ makeLenses ''Environment
 data TState = TState
   { _user     :: IORef CurrentUser
   , _remote   :: Remote
+  , _site     :: Site
   }
 
 makeLenses ''TState
