@@ -6,15 +6,22 @@ set -u
 set -x
 
 ################################################################################
+exec 1>&2
+
+################################################################################
 PORT=${PORT:-3001}
 PASSWORD="ooYuBezoo2EiwaeciCha"
+
+################################################################################
+export STHENAUTH_DB="${STHENAUTH_DB:-dbname=sthenauth}"
+export STHENAUTH_SECRETS_DIR="${STHENAUTH_SECRETS_DIR:-/tmp/sthenauth}"
 
 ################################################################################
 _curl() {
   path=$1
   shift
 
-  curl --verbose --cacert /tmp/chain.pem --fail \
+  curl --verbose --ipv4 --cacert /tmp/chain.pem --fail \
     "$@" "https://localhost:${PORT}/auth/$path"
 }
 

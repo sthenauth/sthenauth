@@ -1,9 +1,0 @@
-# PostgreSQL connection string.
-# See: https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
-database:
-  connection_string: "dbname=sthenauth"
-  metrics_prefix: "sthenauth.database"
-  pool_size: 5
-
-# Limit the number of sessions a single account is allowed to have:
-max_sessions_per_account: 25

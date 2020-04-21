@@ -2,7 +2,19 @@ lib: self: super:
 
 with lib;
 
+let
+  lsp = fetchGit {
+    url = "https://github.com/alanz/haskell-lsp.git";
+    rev = "c19ed85e9da8516784415c7144331cabe9e89bf8"; # 0.21
+  };
+in
+
 rec {
+  #
+  #
+  # Packages that I own or have patched:
+  #
+  #
   fused-effects-relude = lib.fetchGit {
     url = "https://code.devalot.com/open/fused-effects-relude.git";
     rev = "97f2864bcc8c1dbbf598c670ac30c6ae8bc20f06";
@@ -38,6 +50,29 @@ rec {
         ref = "pjones/instances";
     }) {};
 
+  #
+  #
+  # Latest versions of some packages:
+  #
+  #
+  ormolu = (import (fetchGit {
+      url = "https://github.com/tweag/ormolu.git";
+      rev = "683cbeacf5334cd8615b49d31a8ecf35ec20cafe";
+    }) {
+      pkgs = lib.pkgs;
+      ormoluCompiler = lib.compilerName;
+    }).ormolu;
+
+  ghcide = (import (fetchGit {
+    url = "https://code.devalot.com/pjones/ghcide-nix.git";
+    rev = "471990016e47f6eaab5d6aeeb2da6f58aa581bb7";
+  })) {};
+
+  #
+  #
+  # Un-break some packages:
+  #
+  #
   ip = unBreak (dontCheck super.ip);
   wide-word = unBreak (dontCheck (doJailbreak super.wide-word));
   ekg-core = unBreak (dontCheck (doJailbreak super.ekg-core));

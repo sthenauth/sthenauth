@@ -39,6 +39,10 @@ in
       path = [ cfg.package pkgs.postgresql ];
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" "postgresql.service" ];
+      environment = {
+        STHENAUTH_DB = "dbname=sthenauth";
+        STHENAUTH_SECRETS_DIR = "/tmp/sthenauth";
+      };
 
       preStart = ''
         mkdir -p /var/lib/sthenauth
@@ -48,7 +52,7 @@ in
           ${pkgs.sudo}/bin/sudo -u postgres psql -tA sthenauth
       '';
 
-      script = "sthenauth --init --migrate server";
+      script = "sthenauth --init --migrate server --port=3001";
     };
   };
 }

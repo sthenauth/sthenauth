@@ -4,18 +4,23 @@
 let
   nix-hs = import (builtins.fetchGit {
     url = "https://code.devalot.com/open/nix-hs.git";
-    rev = "136d1a5c1e87c2ef5e8050c6b521f4d529645eba";
+    rev = "ab8f15a5a84d0d685c42e8fcfec3cf34755b562f";
     ref = "next";
   }) { inherit pkgs; };
 
   license = ../LICENSE;
 
+  # Replace symlinks that point outside of the project:
+  postPatch = ''
+    rm LICENSE
+    cp ${license} LICENSE
+  '';
+
   with-patches = args:
-    (nix-hs args).overrideAttrs (_orig: {
-      # Replace symlinks that point outside of the project:
+    nix-hs (args // {
       postPatch = ''
-        rm LICENSE
-        cp ${license} LICENSE
+        ${args.postPatch or ""}
+        ${postPatch}
       '';
     });
 

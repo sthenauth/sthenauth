@@ -14,13 +14,5 @@ Copyright:
 License: Apache-2.0
 
 -}
-module Main (main) where
-
---------------------------------------------------------------------------------
--- Project Imports:
-import qualified Sthenauth.Shell.Boot as Boot
-
---------------------------------------------------------------------------------
--- | Main entry point.
-main :: IO ()
-main = Boot.main
+import Distribution.Simple
+main = defaultMain

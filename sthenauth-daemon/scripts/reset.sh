@@ -6,13 +6,11 @@ set -u
 email="admin@example.com"
 password="ooYuBezoo2EiwaeciCha"
 
-export BASEDIR="$(pwd)/tmp"
-export STHENAUTH_CONFIG="$BASEDIR/config.yml"
-export STHENAUTH_SECRETS_DIR="$BASEDIR/secrets"
+export STHENAUTH_SECRETS_DIR="${STHENAUTH_SECRETS_DIR:-tmp}"
 
 dropdb sthenauth && \
   createdb sthenauth && \
-  rm -rf "$BASEDIR"
+  rm -rf "$STHENAUTH_SECRETS_DIR"
 
 echo 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";' | \
   psql sthenauth
@@ -33,4 +31,4 @@ cabal run sthenauth -- \
   policy mode --self-service
 
 cabal run sthenauth -- \
-  server
+  server --port=3001
