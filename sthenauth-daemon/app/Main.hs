@@ -131,4 +131,4 @@ apiServerThread Config {..} env certauth = do
 main :: IO ()
 main = do
   store <- Metrics.newStore
-  Commands.main (Just startServer) Nothing Nothing (Just store)
+  Commands.main (Just startServer) Nothing Nothing Nothing (Just store)

@@ -29,9 +29,9 @@ in
       authentication = mkForce ''
         local all all trust
       '';
-      extraConfig = ''
-        log_statement = all
-      '';
+      # extraConfig = ''
+      #   log_statement = all
+      # '';
     };
 
     systemd.services.sthenauth = {

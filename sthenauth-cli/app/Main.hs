@@ -25,4 +25,4 @@ import qualified Sthenauth.Shell.Commands as Commands
 --------------------------------------------------------------------------------
 -- | Delegate to the build-in commands.
 main :: IO ()
-main = Commands.main @() Nothing Nothing Nothing Nothing
+main = Commands.main @() Nothing Nothing Nothing Nothing Nothing

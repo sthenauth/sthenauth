@@ -2,7 +2,7 @@ cabal-version: 2.2
 
 --------------------------------------------------------------------------------
 name:          sthenauth
-version:       0.1.0
+version:       0.1.0.0
 synopsis:      Retire your custom authentication software and use Sthenauth instead.
 description:   For more details please see the README.md file.
 license:       Apache-2.0
@@ -47,6 +47,7 @@ common options
     MultiParamTypeClasses
     MultiWayIf
     NamedFieldPuns
+    NumericUnderscores
     OverloadedStrings
     RankNTypes
     RecordWildCards
@@ -83,6 +84,7 @@ common dependencies
                , ekg-core             >= 0.1  && < 0.2
                , elm-syntax           >= 0.2  && < 0.3
                , email-validate       >= 2.3  && < 2.4
+               , fast-logger          >= 3.0  && < 3.1
                , filepath             >= 1.4  && < 1.5
                , fused-effects        >= 1.0  && < 1.1
                , fused-effects-relude >= 0.1  && < 0.2
@@ -144,6 +146,8 @@ library
     Sthenauth.Core.Event
     Sthenauth.Core.EventDetail
     Sthenauth.Core.HTTP
+    Sthenauth.Core.Logger
+    Sthenauth.Core.Maintenance
     Sthenauth.Core.Policy
     Sthenauth.Core.Provider
     Sthenauth.Core.Public
