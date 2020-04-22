@@ -52,7 +52,7 @@ in
           ${pkgs.sudo}/bin/sudo -u postgres psql -tA sthenauth
       '';
 
-      script = "sthenauth --init --migrate server --port=3001";
+      script = "sthenauth --init --migrate server --port=3001 --test-mode";
     };
   };
 }

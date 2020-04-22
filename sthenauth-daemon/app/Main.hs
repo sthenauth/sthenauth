@@ -29,7 +29,7 @@ import Servant.API
 import Servant.Server
 import Servant.Server.StaticFiles (serveDirectoryFileServer)
 import Sthenauth.API.Log (Logger, withLogger)
-import Sthenauth.API.Middleware (Client, middleware)
+import Sthenauth.API.Middleware (Client, ServerMode (..), initMiddleware, middleware)
 import Sthenauth.API.Routes (API, TopPath)
 import Sthenauth.API.Server (apiServer)
 import Sthenauth.CertAuth.Carrier
@@ -53,7 +53,9 @@ data Config = Config
   { -- | The port to listen on.
     configPort :: Int,
     -- | Path to the @www@ directory to serve files out of.
-    configWwwDir :: Maybe FilePath
+    configWwwDir :: Maybe FilePath,
+    -- | Which settings mode to use.
+    configMode :: ServerMode
   }
 
 instance Options.IsCommand Config where
@@ -86,6 +88,15 @@ instance Options.IsCommand Config where
                     ]
                 )
             )
+          <*> ( OA.flag'
+                  TestMode -- Put the server into test mode:
+                  ( mconcat
+                      [ OA.long "test-mode",
+                        OA.hidden
+                      ]
+                  )
+                  <|> pure ProductionMode
+              )
 
 -- | Called when the command-line sub-command is @server@.
 startServer :: Environment -> Config -> IO ()
@@ -109,12 +120,13 @@ apiServerThread :: Config -> Environment -> CertAuthEnv -> IO ()
 apiServerThread Config {..} env certauth = do
   www <- getDataDir <&> (</> "www")
   rkey <- Vault.newKey
-  withLogger (fmap fst . Vault.lookup rkey . Wai.vault) $ \logger -> do
+  withLogger env (fmap fst . Vault.lookup rkey . Wai.vault) $ \logger -> do
     let settings = Warp.defaultSettings & Warp.setPort configPort
         files = fromMaybe www configWwwDir
         server' = serve finalapi (server rkey logger files)
     tls <- serverSettingsForTLS certauth
-    Warp.runTLS tls settings (middleware rkey logger server')
+    me <- initMiddleware rkey logger configMode
+    Warp.runTLS tls settings (middleware me server')
   where
     -- FIXME: Must redirect /auth to /auth/ or <script src=""> won't work!
     server :: Vault.Key Client -> Logger -> FilePath -> Server FinalAPI

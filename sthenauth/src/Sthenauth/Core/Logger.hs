@@ -17,10 +17,11 @@ module Sthenauth.Core.Logger
     Severity (..),
     newLogger,
     log,
+    logInfo,
   )
 where
 
-import Data.Aeson (ToJSON)
+import Data.Aeson ((.=), ToJSON)
 import qualified Data.Aeson as Aeson
 import qualified System.Log.FastLogger as FastLogger
 import qualified System.Mem.Weak as Weak
@@ -46,20 +47,33 @@ newLogger = do
 -- @since 0.1.0.0
 data Severity
   = LogInfo
+  | LogHttpReq
   | LogError
 
 instance FastLogger.ToLogStr Severity where
   toLogStr = \case
     LogInfo -> FastLogger.toLogStr (" [INFO] " :: ByteString)
+    LogHttpReq -> FastLogger.toLogStr (" [HTTP] " :: ByteString)
     LogError -> FastLogger.toLogStr (" [ERRO] " :: ByteString)
 
 -- | Log a message.
 --
 -- @since 0.1.0.0
-log :: ToJSON a => Logger -> Severity -> a -> IO ()
-log (Logger (logger, _)) severity msg = logger $ \time ->
+log :: (MonadIO m, ToJSON a) => Logger -> Severity -> a -> m ()
+log (Logger (logger, _)) severity msg = liftIO . logger $ \time ->
   mconcat
     [ FastLogger.toLogStr time,
       FastLogger.toLogStr severity,
-      FastLogger.toLogStr (Aeson.encode msg)
+      FastLogger.toLogStr (Aeson.encode msg),
+      FastLogger.toLogStr ("\n" :: ByteString)
     ]
+
+-- | Write some text into the log at 'LogInfo'.
+--
+-- @since 0.1.0.0
+logInfo :: MonadIO m => Text -> Logger -> m ()
+logInfo msg logger =
+  log logger LogInfo $
+    Aeson.object
+      [ "message" .= msg
+      ]

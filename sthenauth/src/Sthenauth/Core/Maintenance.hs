@@ -25,6 +25,7 @@ import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (Async)
 import qualified Control.Concurrent.Async as Async
 import Control.Exception.Safe (tryAnyDeep)
+import qualified Data.Aeson as Aeson
 import Sthenauth.Core.Logger
 
 -- | How often to execute a task.
@@ -64,7 +65,7 @@ data Task = Task
 -- | Create a new task that runs the given action.
 --
 -- @since 0.1.0.0
-task :: IO () -> IO Task
+task :: (Logger -> IO ()) -> IO Task
 task action = do
   var <- newEmptyMVar
   thread <- Async.async (go var)
@@ -76,9 +77,13 @@ task action = do
       let ms = intervalToMicroseconds interval
       forever $ do
         threadDelay ms
-        tryAnyDeep action >>= \case
+        tryAnyDeep (action logger) >>= \case
           Right _ -> pass
-          Left e -> log logger LogError (show e :: Text)
+          Left e ->
+            log logger LogError $
+              Aeson.object
+                [ "error" Aeson..= (show e :: Text)
+                ]
 
 -- | Schedule a task.
 --

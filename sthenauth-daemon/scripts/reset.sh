@@ -15,20 +15,30 @@ dropdb sthenauth && \
 echo 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";' | \
   psql sthenauth
 
-cabal run sthenauth -- \
-  --email "${email}" \
-  --password "${password}"  \
-  init
+if [ $# = 0 ]; then
+  cabal run sthenauth -- \
+    --email "${email}" \
+    --password "${password}"  \
+    init
 
-cabal run sthenauth -- \
-  --email "${email}" \
-  --password "${password}"  \
-  info
+  cabal run sthenauth -- \
+    --email "${email}" \
+    --password "${password}"  \
+    info
 
-cabal run sthenauth -- \
-  --email "${email}" \
-  --password "${password}"  \
-  policy mode --self-service
+  cabal run sthenauth -- \
+    --email "${email}" \
+    --password "${password}"  \
+    policy mode --self-service
+fi
 
-cabal run sthenauth -- \
-  server --port=3001
+server() {
+  cabal run sthenauth -- \
+        server --port=3001 "$@"
+}
+
+if [ $# -eq 1 ] && [ "$1" = "test" ]; then
+   server --test-mode
+else
+  server
+fi

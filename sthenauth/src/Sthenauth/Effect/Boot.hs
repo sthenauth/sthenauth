@@ -36,6 +36,7 @@ import Sthenauth.Core.Remote
 import qualified Sthenauth.Core.Session as Session
 import Sthenauth.Core.Site
 import Sthenauth.Effect.Runtime
+import qualified Sthenauth.Providers.OIDC.Cookie as OidcCookie
 import System.Directory
 import System.FilePath
 import qualified System.Metrics as Metrics
@@ -137,8 +138,9 @@ deleteExpiredSessions :: Environment -> IO Maintenance.Task
 deleteExpiredSessions env = Maintenance.task go
   where
     -- Thread.
-    go :: IO ()
-    go =
+    go :: Logger -> IO ()
+    go logger = do
+      logInfo "Starting maintenance: delete expired sessions" logger
       transaction_ query
         & runDatabase (env ^. database)
         & runError >>= eitherToThrow
@@ -146,6 +148,7 @@ deleteExpiredSessions env = Maintenance.task go
     query :: Query ()
     query = do
       _ <- delete Session.deleteExpiredSessions
+      _ <- delete OidcCookie.deleteExpiredCookies
       pass
 
 -- | Utility function to help with type inference.
