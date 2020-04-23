@@ -1,0 +1,6 @@
+packages:
+  sthenauth/
+  sthenauth-certauth/
+  sthenauth-cli/
+  sthenauth-daemon/
+  sthenauth-servant/

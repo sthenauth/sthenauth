@@ -1,0 +1,14 @@
+cradle:
+  cabal:
+    - path: "./sthenauth"
+      component: "lib:sthenauth"
+    - path: "./sthenauth-certauth"
+      component: "lib:sthenauth-certauth"
+    - path: "./sthenauth-cli"
+      component: "lib:sthenauth-cli"
+    - path: "./sthenauth-cli/app"
+      component: "sthenauth-cli:sthenauth"
+    - path: "./sthenauth-daemon"
+      component: "sthenauth-daemon:sthenauth"
+    - path: "./sthenauth-servant"
+      component: "lib:sthenauth-servant"

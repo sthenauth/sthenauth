@@ -3,11 +3,14 @@ args@{}:
 let
   pkgs = import ./nix/nixpkgs.nix args;
 
-in
-{
-  sthenauth = import ./sthenauth { inherit pkgs; };
-  sthenauth-cli = import ./sthenauth-cli { inherit pkgs; };
-  sthenauth-certauth = import ./sthenauth-certauth { inherit pkgs; };
-  sthenauth-daemon = import ./sthenauth-daemon { inherit pkgs; };
-  sthenauth-servant = import ./sthenauth-servant { inherit pkgs; };
+in pkgs.nix-hs {
+  cabal = {
+    sthenauth = ./sthenauth/sthenauth.cabal;
+    sthenauth-certauth = ./sthenauth-certauth/sthenauth-certauth.cabal;
+    sthenauth-cli = ./sthenauth-cli/sthenauth-cli.cabal;
+    sthenauth-daemon = ./sthenauth-daemon/sthenauth-daemon.cabal;
+    sthenauth-servant = ./sthenauth-servant/sthenauth-servant.cabal;
+  };
+
+  overrides = import ./nix/overrides.nix;
 }
