@@ -24,7 +24,6 @@ import Data.List (lookup)
 import Data.Time.Clock (getCurrentTime)
 import qualified Data.Vault.Lazy as Vault
 import qualified Network.HTTP.Types.Header as HTTP
-import qualified Network.Socket as Net
 import qualified Network.Wai as Wai
 import qualified Network.Wai.Middleware.Throttle as Throttle
 import Sthenauth.API.Log
@@ -47,7 +46,7 @@ clientFromRequest key downstream req res = do
   let skey = sessionKeyFromHeaders headers
       r =
         Remote
-          { _address = remoteAddr headers (Wai.remoteHost req),
+          { _address = remoteAddr req,
             _userAgent = getUserAgent headers,
             _requestFqdn = hostFQDN headers,
             _requestId = rid,
@@ -60,10 +59,13 @@ clientFromRequest key downstream req res = do
     getUserAgent = decodeUtf8 . fromMaybe "UNK" . lookup HTTP.hUserAgent
     hostFQDN :: HTTP.RequestHeaders -> Text
     hostFQDN = decodeUtf8 . fromMaybe "localhost" . lookup HTTP.hHost
-    remoteAddr :: HTTP.RequestHeaders -> Net.SockAddr -> Address
-    remoteAddr hs sa =
-      let fromHeader = lookup "X-Forwarded-For" hs >>= mkAddress . decodeUtf8
-       in fromMaybe (fromSockAddr sa) fromHeader
+
+-- | Extract the remote address from the request.
+remoteAddr :: Wai.Request -> Address
+remoteAddr req =
+  let hs = Wai.requestHeaders req
+      fromHeader = lookup "X-Forwarded-For" hs >>= mkAddress . decodeUtf8
+   in fromMaybe (fromSockAddr (Wai.remoteHost req)) fromHeader
 
 -- | Middleware that logs the response from downstream.
 logResponse :: Logger -> Wai.Middleware
@@ -82,7 +84,7 @@ data ServerMode
     TestMode
 
 data MiddlewareEnv = MiddlewareEnv
-  { meThrottle :: Throttle.Throttle Throttle.Address,
+  { meThrottle :: Throttle.Throttle Address,
     meVaultKey :: Vault.Key Client,
     meLogger :: Logger
   }
@@ -103,7 +105,7 @@ initMiddleware key logger mode = do
             Throttle.throttleSettingsIsThrottled = modeIsThrottled mode
           }
   MiddlewareEnv
-    <$> Throttle.initThrottler settings
+    <$> Throttle.initCustomThrottler settings (Right . remoteAddr)
     <*> pure key
     <*> pure logger
   where

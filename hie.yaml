@@ -2,6 +2,8 @@ cradle:
   cabal:
     - path: "./sthenauth"
       component: "lib:sthenauth"
+    - path: "./sthenauth/test"
+      component: "sthenauth:test"
     - path: "./sthenauth-certauth"
       component: "lib:sthenauth-certauth"
     - path: "./sthenauth-cli"

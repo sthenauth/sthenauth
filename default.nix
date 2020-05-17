@@ -1,9 +1,9 @@
-args@{}:
+{ sources ? import ./nix/sources.nix, pkgs ? import sources.nixpkgs { }
+, ghc ? "default" }:
 
-let
-  pkgs = import ./nix/nixpkgs.nix args;
+let nix-hs = pkgs.callPackage ./nix/nix-hs.nix { };
 
-in pkgs.nix-hs {
+in nix-hs {
   cabal = {
     sthenauth = ./sthenauth/sthenauth.cabal;
     sthenauth-certauth = ./sthenauth-certauth/sthenauth-certauth.cabal;
@@ -12,5 +12,6 @@ in pkgs.nix-hs {
     sthenauth-servant = ./sthenauth-servant/sthenauth-servant.cabal;
   };
 
-  overrides = import ./nix/overrides.nix;
+  compiler = ghc;
+  overrides = pkgs.callPackage ./nix/overrides.nix { };
 }
